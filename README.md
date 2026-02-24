@@ -1,6 +1,7 @@
 # Fortitude — Market Intelligence Platform
 
-Professional trading performance environment. Risk discipline and probabilistic thinking.
+Professional trading performance environment. 
+Risk, discipline and probabilistic thinking.
 
 ---
 
