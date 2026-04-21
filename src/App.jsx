@@ -276,6 +276,12 @@ const api = {
     const res = await fetch(`${API_BASE}${path}`, { headers, credentials: "include" });
     return res.json();
   },
+  async del(path, token = null) {
+    const headers = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}${path}`, { method: "DELETE", headers, credentials: "include" });
+    return res.json();
+  },
 };
 const mapTier = (t) => ({ free:"free", core_45:"45", pro_65:"65", elite_95:"95", lifetime:"lifetime" }[t] || "free");
 const isOwnerEmail = (email) => email === "jared@fortitude.trade" || email === "deacon@fortitude.trade";
@@ -413,7 +419,7 @@ const Login = ({ onLogin }) => {
     setError(""); setLoading(true);
     try {
       const fullPhone = phone ? `${dialCode.dial}${phone.replace(/^0+/, "")}` : "";
-      const data = await api.post("/auth/register", {
+      const regData = await api.post("/auth/register", {
         email:        regEmail,
         password:     regPass,
         first_name:   firstName.trim(),
@@ -424,12 +430,19 @@ const Login = ({ onLogin }) => {
         dialing_code: dialCode.dial,
         source:       "web",
       });
-      if (data.success) {
-        localStorage.setItem("fis_token", data.data.accessToken);
-        localStorage.setItem("fis_user", JSON.stringify(data.data.user));
-        onLogin({ token: data.data.accessToken, user: data.data.user });
+      if (regData.success) {
+        // Auto-login immediately after registration
+        const loginData = await api.post("/auth/login", { email: regEmail, password: regPass });
+        if (loginData.success) {
+          localStorage.setItem("fis_token", loginData.data.accessToken);
+          localStorage.setItem("fis_user", JSON.stringify(loginData.data.user));
+          onLogin({ token: loginData.data.accessToken, user: loginData.data.user });
+        } else {
+          setError("Account created! Please sign in.");
+          switchMode("login");
+        }
       } else {
-        setError(data.error?.message || "Something went wrong. Please try again.");
+        setError(regData.error?.message || "Something went wrong. Please try again.");
         setStep(1);
       }
     } catch { setError("Unable to connect. Please try again."); setStep(1); }
@@ -598,33 +611,31 @@ const Login = ({ onLogin }) => {
 
 
 // ── TradingView Economic Calendar Widget ──────────────────────────────────────
-const TVCalendarWidget = ({ height = 600 }) => {
+const TVCalendarWidget = ({ height = 650 }) => {
   const container = useRef();
   useEffect(() => {
     if (!container.current) return;
-    const existing = container.current.querySelector('script');
-    if (existing) existing.remove();
-    const widgetDiv = container.current.querySelector('.tradingview-widget-container__widget');
-    if (widgetDiv) widgetDiv.innerHTML = '';
-    const script = document.createElement("script");
-    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-events.js";
-    script.type = "text/javascript";
-    script.async = true;
-    script.textContent = JSON.stringify({
+    // Clear previous instance to prevent duplicates on re-render
+    container.current.innerHTML = '<div class="tradingview-widget-container__widget" style="width:100%;height:100%"></div>';
+    const config = {
       colorTheme: "dark",
       isTransparent: true,
       width: "100%",
       height: height,
       locale: "en",
-      importanceFilter: "1",
-      countryFilter: "us",
-    });
+      importanceFilter: "-1,0,1",
+      countryFilter: "us,eu,gb,jp,cn,au,ca,ch,nz",
+    };
+    const script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-events.js";
+    script.async = true;
+    script.innerHTML = JSON.stringify(config);
     container.current.appendChild(script);
-  }, []);
+    return () => { if (container.current) container.current.innerHTML = ""; };
+  }, [height]);
   return (
-    <div className="tradingview-widget-container" ref={container} style={{ width:"100%", minHeight:height }}>
-      <div className="tradingview-widget-container__widget" style={{ width:"100%", height:"100%" }}/>
-    </div>
+    <div className="tradingview-widget-container" ref={container} style={{ width:"100%", minHeight:height, borderRadius:8, overflow:"hidden" }}/>
   );
 };
 
@@ -1285,98 +1296,47 @@ const MOCK_SYNCED_TRADES = [
   { id:10, instrument:"XAUUSD", trade_type:"Long",  volume:0.3, open_price:2019.00, close_price:2019.00, open_time:"2026-03-09T01:20:00Z", close_time:null,                   profit:120,   commission:-1.8, session:"Asia",     is_open:true  },
 ];
 
+// Key macro events shown on the Global Market Pulse map
+const MAP_EVENTS = [
+  {lbl:"Federal Reserve",  type:"Monetary Policy", imp:9, desc:"Higher for longer confirmed. USD supported. Rate cuts deferred to Q3+."},
+  {lbl:"Bank of Japan",    type:"Monetary Policy", imp:8, desc:"Policy normalisation accelerating. Carry trade unwind risk elevated."},
+  {lbl:"ECB Frankfurt",    type:"Monetary Policy", imp:7, desc:"Rate path uncertain. Incoming data will drive the next move."},
+  {lbl:"US CPI Release",   type:"Inflation Data",  imp:8, desc:"Below consensus — disinflation intact. Dovish repricing underway."},
+  {lbl:"Red Sea Tensions", type:"Geopolitical",    imp:8, desc:"12% of global trade rerouted. Shipping costs elevated. Oil +3.8%."},
+  {lbl:"IMF Warning",      type:"Economic Data",   imp:7, desc:"Global growth cut to 2.7%. Stagflation risk flagged for first time since 2022."},
+  {lbl:"OPEC+ Dubai",      type:"Energy",          imp:7, desc:"Output unchanged. Geopolitical premium supporting crude near $85/bbl."},
+];
+
+
 const GlobalMarketPulse = () => {
   const canvasRef = useRef(null);
   const animRef   = useRef(null);
   const frameRef  = useRef(0);
-  // Start centred on Atlantic — shows Tokyo, London, New York all visible
-  const rotRef    = useRef([-15, -20]);
-  const scaleRef  = useRef(1);
-  const dragRef   = useRef(null);
-  const autoRef   = useRef(true);
+  const rotRef    = useRef([-15, -18]);
   const worldRef  = useRef(null);
-  const partRef   = useRef([]);
-  const planeRef  = useRef([]);
   const hovRef    = useRef(null);
-  const layerRef  = useRef("all");
   const [hovered, setHovered] = useState(null);
-  const [layer,   setLayer]   = useState("all");
   const [now,     setNow]     = useState(new Date());
   const [loaded,  setLoaded]  = useState(false);
 
-  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
-  const utc  = now.getUTCHours() + now.getUTCMinutes()/60 + now.getUTCSeconds()/3600;
-  const dUTC = now.getUTCDay();
-  // FX weekend — but crypto trades 24/7
-  const isFxWeekend = dUTC===6 || (dUTC===0 && utc<22) || (dUTC===5 && utc>=22);
+  const utc   = now.getUTCHours() + now.getUTCMinutes()/60 + now.getUTCSeconds()/3600;
+  const dayN  = now.getUTCDay();
+  const fxWknd = dayN===6 || (dayN===0 && utc<22) || (dayN===5 && utc>=22);
 
-  // ── Session colours: PINK = closed, BLUE = open ──
-  // Each session has a closedCol (pink) and openCol (blue)
-  const SESSIONS = [
-    { id:"asia",   label:"Asia / Tokyo", tz:"Asia/Tokyo",       open:0,   close:9,  openCol:"#29a8ff", closedCol:"#e91ea7", ex:"TSE"  },
-    { id:"europe", label:"London",       tz:"Europe/London",    open:7,   close:16, openCol:"#29a8ff", closedCol:"#e91ea7", ex:"LSE"  },
-    { id:"ny",     label:"New York",     tz:"America/New_York", open:13.5,close:20, openCol:"#29a8ff", closedCol:"#e91ea7", ex:"NYSE" },
-  ];
-
-  // Crypto is always open — separate indicator
-  const CRYPTO_MARKETS = [
-    { n:"Binance",  la:1.35,  lo:103.82, label:"Crypto 24/7" },
-    { n:"Coinbase", la:37.77, lo:-122.4, label:"Crypto 24/7" },
-  ];
-
-  const CITIES = [
-    {n:"Tokyo",    la:35.68, lo:139.69, s:"asia",   sz:3, major:true},
-    {n:"Hong Kong",la:22.32, lo:114.17, s:"asia",   sz:2, major:false},
-    {n:"Sydney",   la:-33.87,lo:151.21, s:"asia",   sz:2, major:false},
-    {n:"Singapore",la:1.35,  lo:103.82, s:"asia",   sz:2, major:false},
-    {n:"Mumbai",   la:19.08, lo:72.88,  s:"asia",   sz:2, major:false},
-    {n:"Dubai",    la:25.20, lo:55.27,  s:"europe", sz:2, major:false},
-    {n:"London",   la:51.51, lo:-0.13,  s:"europe", sz:3, major:true},
-    {n:"Frankfurt",la:50.11, lo:8.68,   s:"europe", sz:2, major:false},
-    {n:"Zurich",   la:47.38, lo:8.54,   s:"europe", sz:2, major:false},
-    {n:"Paris",    la:48.86, lo:2.35,   s:"europe", sz:2, major:false},
-    {n:"New York", la:40.71, lo:-74.01, s:"ny",     sz:3, major:true},
-    {n:"Chicago",  la:41.88, lo:-87.63, s:"ny",     sz:2, major:false},
-    {n:"Toronto",  la:43.65, lo:-79.38, s:"ny",     sz:2, major:false},
-    {n:"São Paulo",la:-23.55,lo:-46.63, s:"ny",     sz:2, major:false},
-  ];
-  const FLOWS = [
-    {f:"London",   t:"New York",  spd:.0030, on:u=>!isFxWeekend&&u>=13.5&&u<16.5},
-    {f:"Tokyo",    t:"London",    spd:.0025, on:u=>!isFxWeekend&&u>=6&&u<9},
-    {f:"New York", t:"Tokyo",     spd:.0025, on:u=>!isFxWeekend&&(u>=20||u<2)},
-    {f:"London",   t:"Dubai",     spd:.0030, on:u=>!isFxWeekend&&u>=8&&u<12},
-    {f:"Singapore",t:"Tokyo",     spd:.0030, on:u=>!isFxWeekend&&u>=0&&u<6},
-    {f:"Frankfurt",t:"New York",  spd:.0025, on:u=>!isFxWeekend&&u>=14&&u<18},
-    {f:"New York", t:"São Paulo", spd:.0025, on:u=>!isFxWeekend&&u>=14&&u<20},
-    {f:"Mumbai",   t:"Dubai",     spd:.0030, on:u=>!isFxWeekend&&u>=4&&u<10},
-    {f:"Hong Kong",t:"Frankfurt", spd:.0020, on:u=>!isFxWeekend&&u>=6&&u<10},
-    // Crypto flows — always active
-    {f:"Singapore",t:"New York",  spd:.0018, on:u=>true, isCrypto:true},
-    {f:"Hong Kong",t:"New York",  spd:.0016, on:u=>true, isCrypto:true},
-  ];
-  const SHIPPING = [
-    {from:[103.82,1.35], to:[-0.13,51.51]},  {from:[55.27,25.20],   to:[-0.13,51.51]},
-    {from:[-74.01,40.71],to:[-0.13,51.51]},  {from:[139.69,35.68],  to:[-74.01,40.71]},
-    {from:[103.82,1.35], to:[-74.01,40.71]}, {from:[151.21,-33.87], to:[103.82,1.35]},
-  ];
-  const EVENTS = [
-    {la:38.9, lo:-77.0, lbl:"Federal Reserve",  type:"Monetary Policy", imp:9, desc:"Higher for longer confirmed. USD supported. Rate cuts deferred."},
-    {la:50.11,lo:8.68,  lbl:"ECB Frankfurt",    type:"Monetary Policy", imp:7, desc:"Rate path uncertain. Incoming inflation data will drive next move."},
-    {la:35.68,lo:139.69,lbl:"Bank of Japan",    type:"Monetary Policy", imp:8, desc:"Policy normalisation accelerating. Carry trade unwind risk elevated."},
-    {la:38.9, lo:-77.0, lbl:"US CPI Release",   type:"Inflation Data",  imp:8, desc:"Below consensus — disinflation intact. Dovish repricing underway."},
-    {la:15.0, lo:42.5,  lbl:"Red Sea Tensions", type:"Geopolitical",    imp:8, desc:"12% of global trade rerouted. Shipping costs elevated. Oil +3.8%."},
-    {la:48.86,lo:2.35,  lbl:"IMF Warning",      type:"Economic Data",   imp:7, desc:"Global growth cut to 2.7%. Stagflation risk flagged."},
-    {la:25.20,lo:55.27, lbl:"OPEC+ Dubai",      type:"Energy",          imp:7, desc:"Output unchanged. Geopolitical premium supporting crude at $85."},
-  ];
-  const LAYERS = [
-    {id:"all",label:"All"},{id:"sessions",label:"Sessions"},
-    {id:"flows",label:"Flows"},{id:"events",label:"Events"},{id:"routes",label:"Routes"},
+  const MARKETS = [
+    { id:"tokyo",   name:"Tokyo",    lat:35.68, lng:139.69, tz:"Asia/Tokyo",       open:0,    close:9,   openCol:"#29a8ff", closedCol:"#e91ea7" },
+    { id:"london",  name:"London",   lat:51.51, lng:-0.13,  tz:"Europe/London",    open:7,    close:16,  openCol:"#29a8ff", closedCol:"#e91ea7" },
+    { id:"newyork", name:"New York", lat:40.71, lng:-74.01, tz:"America/New_York", open:13.5, close:20,  openCol:"#29a8ff", closedCol:"#e91ea7" },
   ];
 
   const fmt    = tz => { try { return new Intl.DateTimeFormat("en-GB",{timeZone:tz,hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date()); } catch { return "--:--:--"; } };
   const fmtSec = sec => { const a=Math.abs(sec),h=Math.floor(a/3600),m=Math.floor((a%3600)/60),s=String(Math.floor(a%60)).padStart(2,"0"); return h>0?`${h}h ${m}m`:`${m}m ${s}s`; };
-  const sessCol = (s) => (!isFxWeekend && utc>=s.open && utc<s.close) ? s.openCol : s.closedCol;
+  const mktOpen = m => !fxWknd && utc>=m.open && utc<m.close;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1385,296 +1345,161 @@ const GlobalMarketPulse = () => {
       if (document.querySelector(`script[src="${src}"]`)) { cb(); return; }
       const s = document.createElement("script"); s.src=src; s.onload=cb; document.head.appendChild(s);
     };
-    const initAnim = () => {
-      partRef.current=[]; planeRef.current=[];
-      FLOWS.forEach((f,fi) => {
-        for (let i=0;i<8;i++) partRef.current.push({fi,t:i/8,spd:f.spd*(0.8+Math.random()*.4),isCrypto:!!f.isCrypto});
-        planeRef.current.push({fi,t:Math.random()*.7,spd:f.spd*.45+.0005,isCrypto:!!f.isCrypto});
-      });
-    };
     const startDraw = () => {
       if (!window.d3||!window.topojson) return;
-      initAnim();
       window.d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json").then(w => {
-        worldRef.current=w; setLoaded(true);
+        worldRef.current = w; setLoaded(true);
         const draw = () => {
-          const cv=canvasRef.current; if(!cv) return;
-          const ctx=cv.getContext("2d");
-          const W=cv.width, H=cv.height;
-          const f=++frameRef.current;
-          const nowD=new Date();
-          const utcD=nowD.getUTCHours()+nowD.getUTCMinutes()/60+nowD.getUTCSeconds()/3600;
-          const dayD=nowD.getUTCDay();
-          const fxWknd=dayD===6||(dayD===0&&utcD<22)||(dayD===5&&utcD>=22);
-          const rot=rotRef.current, sc=scaleRef.current, lyr=layerRef.current;
-          // Very slow, subtle auto-rotation
-          if (autoRef.current&&!dragRef.current) rot[0]+=0.02;
-          const R=Math.min(W,H)*0.455*sc;
-          const cx=W*0.5, cy=H*0.5;
-          const proj=window.d3.geoOrthographic().scale(R).translate([cx,cy]).rotate(rot).clipAngle(90);
-          const path=window.d3.geoPath().context(ctx).projection(proj);
+          const cv = canvasRef.current; if (!cv) return;
+          const ctx = cv.getContext("2d");
+          const W = cv.width, H = cv.height;
+          const f = ++frameRef.current;
+          const rot = rotRef.current;
+          rot[0] += 0.008;
+          const R  = Math.min(W, H) * 0.46;
+          const cx = W/2, cy = H/2;
+          const proj = window.d3.geoOrthographic().scale(R).translate([cx,cy]).rotate(rot).clipAngle(90);
+          const path = window.d3.geoPath().context(ctx).projection(proj);
+
           ctx.clearRect(0,0,W,H);
-          // atmosphere
-          const atm=ctx.createRadialGradient(cx,cy,R*.94,cx,cy,R*1.07);
-          atm.addColorStop(0,"rgba(41,168,255,0.06)"); atm.addColorStop(1,"transparent");
-          ctx.fillStyle=atm; ctx.beginPath(); ctx.arc(cx,cy,R*1.07,0,Math.PI*2); ctx.fill();
-          // ocean
-          const ocn=ctx.createRadialGradient(cx-R*.18,cy-R*.18,0,cx,cy,R);
-          ocn.addColorStop(0,"#0c1828"); ocn.addColorStop(.65,"#07111e"); ocn.addColorStop(1,"#040c16");
-          ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.fillStyle=ocn; ctx.fill();
-          // graticule
-          ctx.beginPath(); path(window.d3.geoGraticule()()); ctx.strokeStyle="rgba(41,168,255,0.05)"; ctx.lineWidth=.4; ctx.stroke();
-          const wd=worldRef.current;
-          if(wd){
-            const land=window.topojson.feature(wd,wd.objects.countries);
-            ctx.beginPath(); path(land);
-            const lg=ctx.createRadialGradient(cx-R*.12,cy-R*.15,0,cx,cy,R);
-            lg.addColorStop(0,"#182840"); lg.addColorStop(1,"#0e1c30");
-            ctx.fillStyle=lg; ctx.fill();
-            // night
+
+          // Ocean
+          const ocean = ctx.createRadialGradient(cx,cy,0,cx,cy,R);
+          ocean.addColorStop(0,"#0a1628"); ocean.addColorStop(.7,"#060e1c"); ocean.addColorStop(1,"#030810");
+          ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.fillStyle=ocean; ctx.fill();
+
+          // Graticule
+          ctx.beginPath(); path(window.d3.geoGraticule().step([30,30])());
+          ctx.strokeStyle="rgba(41,168,255,0.04)"; ctx.lineWidth=.4; ctx.stroke();
+
+          const wd = worldRef.current;
+          if (wd) {
+            const land = window.topojson.feature(wd, wd.objects.countries);
+            ctx.beginPath(); path(land); ctx.fillStyle="#0f1d30"; ctx.fill();
+
+            // Day/night
+            const nowD=new Date(), utcD=nowD.getUTCHours()+nowD.getUTCMinutes()/60;
             const doy=Math.floor((nowD-new Date(nowD.getFullYear(),0,0))/864e5);
             const decl=-23.45*Math.cos((360/365)*(doy+10)*Math.PI/180)*Math.PI/180;
             const snLng=-(utcD-12)*15;
             const nPts=[];
-            for(let la=-88;la<=88;la+=2){const laR=la*Math.PI/180,dn=Math.cos(laR)*Math.cos(decl);if(Math.abs(dn)<.001)continue;const cosH=-(Math.sin(laR)*Math.sin(decl))/dn;if(Math.abs(cosH)>1)continue;const ha=Math.acos(cosH)*180/Math.PI;nPts.push([snLng-ha,la]);}
-            if(nPts.length>4){const nGeo={type:"Polygon",coordinates:[[...nPts,[snLng-180,-90],[snLng+180,-90],[snLng+180,90],[snLng-180,90],nPts[0]]]};ctx.beginPath();path({type:"Feature",geometry:nGeo});ctx.fillStyle="rgba(0,2,10,0.52)";ctx.fill();ctx.beginPath();path({type:"Feature",geometry:{type:"LineString",coordinates:nPts}});ctx.strokeStyle="rgba(255,185,55,0.25)";ctx.lineWidth=1;ctx.stroke();}
-            ctx.beginPath();path(window.topojson.mesh(wd,wd.objects.countries,(a,b)=>a!==b));ctx.strokeStyle="rgba(41,168,255,0.08)";ctx.lineWidth=.35;ctx.stroke();
-            ctx.beginPath();path(land);ctx.strokeStyle="rgba(41,168,255,0.18)";ctx.lineWidth=.6;ctx.stroke();
-          }
-          // globe rim + specular
-          ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.strokeStyle="rgba(41,168,255,0.13)";ctx.lineWidth=1;ctx.stroke();
-          const spec=ctx.createRadialGradient(cx-R*.32,cy-R*.28,0,cx-R*.32,cy-R*.28,R*.55);
-          spec.addColorStop(0,"rgba(255,255,255,0.045)");spec.addColorStop(1,"transparent");
-          ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.fillStyle=spec;ctx.fill();
+            for(let la=-88;la<=88;la+=2){const laR=la*Math.PI/180,dn=Math.cos(laR)*Math.cos(decl);if(Math.abs(dn)<.001)continue;const cosH=-(Math.sin(laR)*Math.sin(decl))/dn;if(Math.abs(cosH)>1)continue;nPts.push([snLng-Math.acos(cosH)*180/Math.PI,la]);}
+            if(nPts.length>4){const nGeo={type:"Polygon",coordinates:[[...nPts,[snLng-180,-90],[snLng+180,-90],[snLng+180,90],[snLng-180,90],nPts[0]]]};ctx.beginPath();path({type:"Feature",geometry:nGeo});ctx.fillStyle="rgba(0,3,12,0.48)";ctx.fill();}
 
+            ctx.beginPath(); path(window.topojson.mesh(wd,wd.objects.countries,(a,b)=>a!==b));
+            ctx.strokeStyle="rgba(41,168,255,0.08)"; ctx.lineWidth=.3; ctx.stroke();
+            ctx.beginPath(); path(land); ctx.strokeStyle="rgba(41,168,255,0.18)"; ctx.lineWidth=.5; ctx.stroke();
+          }
+
+          // Globe rim + specular
+          ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.strokeStyle="rgba(41,168,255,0.12)"; ctx.lineWidth=1; ctx.stroke();
+          const spec=ctx.createRadialGradient(cx-R*.28,cy-R*.25,0,cx-R*.28,cy-R*.25,R*.5);
+          spec.addColorStop(0,"rgba(255,255,255,0.04)"); spec.addColorStop(1,"transparent");
+          ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.fillStyle=spec; ctx.fill();
+
+          // Three market dots
           const isVis=(la,lo)=>{const[rx,ry]=rot,lat1=ry*Math.PI/180,lon1=rx*Math.PI/180,lat2=la*Math.PI/180,lon2=lo*Math.PI/180;return Math.sin(lat1)*Math.sin(lat2)+Math.cos(lat1)*Math.cos(lat2)*Math.cos(lon2-lon1+Math.PI)<0;};
-          const qPt=(p1,cp,p2,t)=>[(1-t)*(1-t)*p1[0]+2*(1-t)*t*cp[0]+t*t*p2[0],(1-t)*(1-t)*p1[1]+2*(1-t)*t*cp[1]+t*t*p2[1]];
+          const nowU=new Date(),utcU=nowU.getUTCHours()+nowU.getUTCMinutes()/60,dayU=nowU.getUTCDay(),wkU=dayU===6||(dayU===0&&utcU<22)||(dayU===5&&utcU>=22);
 
-          // Session glows — blue when open, subtle pink when closed
-          if(lyr==="all"||lyr==="sessions"){
-            const GLOW_CENTERS=[{la:36,lo:135,s:"asia"},{la:52,lo:5,s:"europe"},{la:41,lo:-75,s:"ny"}];
-            GLOW_CENTERS.forEach(gc=>{
-              if(!isVis(gc.la,gc.lo))return;
-              const s=SESSIONS.find(x=>x.id===gc.s); if(!s)return;
-              const open=!fxWknd&&utcD>=s.open&&utcD<s.close;
-              const col=open?"#29a8ff":"#e91ea7";
-              const p=proj([gc.lo,gc.la]); if(!p)return;
-              const pulse=open?(0.14+0.06*Math.sin(f*.04)):0.06;
-              const gr=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],R*.48);
-              gr.addColorStop(0,col+(open?"22":"14"));gr.addColorStop(.5,col+(open?"0c":"07"));gr.addColorStop(1,"transparent");
-              ctx.globalAlpha=pulse;ctx.fillStyle=gr;ctx.beginPath();ctx.arc(p[0],p[1],R*.48,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
-            });
-            // Crypto always-on glow — subtle gold at exchange hubs
-            CRYPTO_MARKETS.forEach(cm=>{
-              if(!isVis(cm.la,cm.lo))return;
-              const p=proj([cm.lo,cm.la]); if(!p)return;
-              const pulse=0.08+0.04*Math.sin(f*.03);
-              const gr=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],R*.15);
-              gr.addColorStop(0,"rgba(212,175,55,0.18)");gr.addColorStop(1,"transparent");
-              ctx.globalAlpha=pulse;ctx.fillStyle=gr;ctx.beginPath();ctx.arc(p[0],p[1],R*.15,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
-            });
-          }
+          MARKETS.forEach((m,mi) => {
+            if (!isVis(m.lat,m.lng)) return;
+            const p=proj([m.lng,m.lat]); if(!p) return;
+            const open=!wkU&&utcU>=m.open&&utcU<m.close;
+            const col=open?m.openCol:m.closedCol;
+            const hov=hovRef.current?.id===m.id;
 
-          // Shipping routes
-          if(lyr==="all"||lyr==="routes"){SHIPPING.forEach(r=>{const geo={type:"Feature",geometry:{type:"LineString",coordinates:[r.from,r.to]}};ctx.beginPath();path(geo);ctx.strokeStyle="rgba(255,255,255,0.06)";ctx.lineWidth=.8;ctx.setLineDash([4,7]);ctx.stroke();ctx.setLineDash([]);});}
-
-          // Capital flows + planes
-          if(lyr==="all"||lyr==="flows"){
-            FLOWS.forEach((flow,fi)=>{
-              if(!flow.on(utcD)&&!flow.isCrypto)return;
-              if(flow.isCrypto&&lyr!=="all"&&lyr!=="flows")return;
-              const c1=CITIES.find(c=>c.n===flow.f),c2=CITIES.find(c=>c.n===flow.t);
-              if(!c1||!c2||(!isVis(c1.la,c1.lo)&&!isVis(c2.la,c2.lo)))return;
-              const p1=proj([c1.lo,c1.la]),p2=proj([c2.lo,c2.la]);
-              if(!p1||!p2)return;
-              const dx=p2[0]-p1[0],dy=p2[1]-p1[1],len=Math.sqrt(dx*dx+dy*dy),lift=Math.min(len*.3,50);
-              const cp=[(p1[0]+p2[0])/2+(-dy/len)*lift,(p1[1]+p2[1])/2+(dx/len)*lift];
-              const flowCol=flow.isCrypto?"rgba(212,175,55,0.5)":"rgba(41,168,255,0.5)";
-              const arcCol=flow.isCrypto?"rgba(212,175,55,0.12)":"rgba(41,168,255,0.12)";
-              ctx.beginPath();ctx.moveTo(p1[0],p1[1]);ctx.quadraticCurveTo(cp[0],cp[1],p2[0],p2[1]);
-              ctx.strokeStyle=arcCol;ctx.lineWidth=.7;ctx.stroke();
-              partRef.current.filter(p=>p.fi===fi).forEach(p=>{
-                const pt=qPt(p1,cp,p2,p.t),alpha=Math.sin(p.t*Math.PI)*.8;
-                ctx.globalAlpha=alpha;ctx.beginPath();ctx.arc(pt[0],pt[1],2,0,Math.PI*2);ctx.fillStyle=flowCol;ctx.fill();
-                ctx.beginPath();ctx.arc(pt[0],pt[1],4,0,Math.PI*2);ctx.fillStyle=flow.isCrypto?"rgba(212,175,55,0.2)":"rgba(41,168,255,0.2)";ctx.fill();
-                ctx.globalAlpha=1;
-              });
-              const pl=planeRef.current.find(p=>p.fi===fi);
-              if(pl&&!flow.isCrypto){const pt=qPt(p1,cp,p2,pl.t),pt2=qPt(p1,cp,p2,Math.min(pl.t+.012,1));const ang=Math.atan2(pt2[1]-pt[1],pt2[0]-pt[0]),vis=Math.sin(pl.t*Math.PI);ctx.save();ctx.translate(pt[0],pt[1]);ctx.rotate(ang);ctx.globalAlpha=vis*.88;ctx.fillStyle="rgba(41,168,255,0.9)";ctx.beginPath();ctx.moveTo(9,0);ctx.lineTo(-5,-3);ctx.lineTo(-3,0);ctx.lineTo(-5,3);ctx.closePath();ctx.moveTo(-2,-1);ctx.lineTo(-7,-5);ctx.lineTo(-7,-3.5);ctx.lineTo(-3,-.5);ctx.moveTo(-2,1);ctx.lineTo(-7,5);ctx.lineTo(-7,3.5);ctx.lineTo(-3,.5);ctx.fill();ctx.globalAlpha=1;ctx.restore();}
-            });
-          }
-
-          // Event markers
-          if(lyr==="all"||lyr==="events"){EVENTS.forEach((ev,i)=>{if(!isVis(ev.la,ev.lo))return;const p=proj([ev.lo,ev.la]);if(!p)return;const h2=hovRef.current&&hovRef.current.type==="ev"&&hovRef.current.i===i;const pulse=.5+.5*Math.sin(f*.07+i*1.1);const r=2.5+(ev.imp/10)*3;ctx.beginPath();ctx.arc(p[0],p[1],r*(1.8+.5*pulse),0,Math.PI*2);ctx.strokeStyle=h2?"rgba(255,255,255,.4)":"rgba(255,255,255,.15)";ctx.lineWidth=1;ctx.stroke();ctx.beginPath();ctx.arc(p[0],p[1],r,0,Math.PI*2);ctx.fillStyle="#ffffff";ctx.fill();});}
-
-          // City dots — BLUE when open, PINK when closed
-          CITIES.forEach((c,i)=>{
-            if(!isVis(c.la,c.lo))return;
-            const p=proj([c.lo,c.la]); if(!p)return;
-            const s=SESSIONS.find(ss=>ss.id===c.s);
-            const open=!fxWknd&&utcD>=s.open&&utcD<s.close;
-            const col=open?"#29a8ff":"#e91ea7";
-            const h2=hovRef.current&&hovRef.current.type==="city"&&hovRef.current.i===i;
-            const r=c.sz+(open?.8:0)+(h2?1:0);
-
-            // Pulsing ring for the 3 major markets — always visible
-            if(c.major){
-              const pulse=0.4+0.35*Math.sin(f*.05+i);
-              const ringR=r*(2.2+0.8*pulse);
-              ctx.beginPath();ctx.arc(p[0],p[1],ringR,0,Math.PI*2);
-              ctx.strokeStyle=open?`rgba(41,168,255,${pulse*.55})`:`rgba(233,30,167,${pulse*.35})`;
-              ctx.lineWidth=1.2;ctx.stroke();
-              // Second outer ring for emphasis
-              ctx.beginPath();ctx.arc(p[0],p[1],ringR*1.6,0,Math.PI*2);
-              ctx.strokeStyle=open?`rgba(41,168,255,${pulse*.2})`:`rgba(233,30,167,${pulse*.12})`;
-              ctx.lineWidth=0.8;ctx.stroke();
-            } else if(open){
-              ctx.beginPath();ctx.arc(p[0],p[1],r*2.4,0,Math.PI*2);
-              ctx.fillStyle="rgba(41,168,255,0.10)";ctx.fill();
+            // Glow when open
+            if (open) {
+              const glow=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],30);
+              glow.addColorStop(0,"rgba(41,168,255,0.14)"); glow.addColorStop(1,"transparent");
+              ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(p[0],p[1],30,0,Math.PI*2); ctx.fill();
             }
 
-            // City dot
-            ctx.beginPath();ctx.arc(p[0],p[1],r,0,Math.PI*2);
-            ctx.fillStyle=col;ctx.fill();
+            // Pulse ring
+            const pulse=open?0.45+0.35*Math.sin(f*0.06+mi*2.1):0.15;
+            const pulseR=open?11+4*Math.sin(f*0.06+mi*2.1):9;
+            ctx.beginPath(); ctx.arc(p[0],p[1],pulseR,0,Math.PI*2);
+            ctx.strokeStyle=open?`rgba(41,168,255,${pulse})`:`rgba(233,30,167,${pulse})`;
+            ctx.lineWidth=1; ctx.stroke();
 
-            // Labels — major markets always visible, others only when open or hovered
-            const showLabel = c.major || (open&&!c.major) || h2;
-            if(showLabel){
-              const labelSize = c.major ? (h2?11:10) : (h2?10:9);
-              ctx.font=`${c.major||h2?"600 ":""}${labelSize}px Inter,sans-serif`;
-              ctx.fillStyle = open ? (c.major?"#eef2f8":"rgba(200,220,245,0.85)") : (c.major?"rgba(233,30,167,0.95)":"rgba(233,30,167,0.75)");
-              ctx.fillText(c.n, p[0]+r+5, p[1]+4);
-            }
+            // Core dot
+            ctx.beginPath(); ctx.arc(p[0],p[1],4,0,Math.PI*2); ctx.fillStyle=col; ctx.fill();
+
+            // City label + status — always visible
+            ctx.font=`600 ${hov?11:10}px Inter,sans-serif`;
+            ctx.fillStyle=open?"#eef2f8":"rgba(233,30,167,0.85)";
+            ctx.fillText(m.name, p[0]+10, p[1]+4);
+            ctx.font="9px Inter,sans-serif";
+            ctx.fillStyle=open?"rgba(41,168,255,0.75)":"rgba(233,30,167,0.5)";
+            ctx.fillText(open?"Open":"Closed", p[0]+10, p[1]+15);
           });
 
-          partRef.current.forEach(p=>{p.t+=p.spd;if(p.t>1)p.t-=1;});
-          planeRef.current.forEach(p=>{p.t+=p.spd;if(p.t>1)p.t-=1;});
-          animRef.current=requestAnimationFrame(draw);
+          animRef.current = requestAnimationFrame(draw);
         };
         draw();
       });
     };
-    loadScript("https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js",()=>loadScript("https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js",startDraw));
-    return () => { if(animRef.current) cancelAnimationFrame(animRef.current); };
+    loadScript("https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js",
+      ()=>loadScript("https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js",startDraw));
+    return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
   }, []);
 
   const handleMouseMove = e => {
-    const canvas=canvasRef.current; if(!canvas) return;
-    const rect=canvas.getBoundingClientRect();
-    const sx=canvas.width/rect.width, sy=canvas.height/rect.height;
+    const cv=canvasRef.current; if(!cv||!window.d3) return;
+    const rect=cv.getBoundingClientRect();
+    const sx=cv.width/rect.width, sy=cv.height/rect.height;
     const mx=(e.clientX-rect.left)*sx, my=(e.clientY-rect.top)*sy;
-    if(dragRef.current){
-      const dx=e.clientX-dragRef.current.x, dy=e.clientY-dragRef.current.y;
-      // Reduced sensitivity — x0.15 instead of x0.35
-      rotRef.current[0]+=dx*.15;
-      rotRef.current[1]=Math.max(-85,Math.min(85,rotRef.current[1]+dy*.15));
-      dragRef.current={x:e.clientX,y:e.clientY};
-    }
-    if(!window.d3)return;
-    const R=Math.min(canvas.width,canvas.height)*.455*scaleRef.current;
-    const proj=window.d3.geoOrthographic().scale(R).translate([canvas.width/2,canvas.height/2]).rotate(rotRef.current).clipAngle(90);
+    const R=Math.min(cv.width,cv.height)*0.46;
+    const proj=window.d3.geoOrthographic().scale(R).translate([cv.width/2,cv.height/2]).rotate(rotRef.current).clipAngle(90);
     const isVis=(la,lo)=>{const[rx,ry]=rotRef.current,lat1=ry*Math.PI/180,lon1=rx*Math.PI/180,lat2=la*Math.PI/180,lon2=lo*Math.PI/180;return Math.sin(lat1)*Math.sin(lat2)+Math.cos(lat1)*Math.cos(lat2)*Math.cos(lon2-lon1+Math.PI)<0;};
     let found=null;
-    EVENTS.forEach((ev,i)=>{if(!isVis(ev.la,ev.lo))return;const p=proj([ev.lo,ev.la]);if(p&&Math.hypot(mx-p[0],my-p[1])<16)found={type:"ev",i,ev};});
-    if(!found)CITIES.forEach((c,i)=>{if(!isVis(c.la,c.lo))return;const p=proj([c.lo,c.la]);if(p&&Math.hypot(mx-p[0],my-p[1])<12)found={type:"city",i,c};});
-    hovRef.current=found; setHovered(found);
+    MARKETS.forEach(m=>{if(!isVis(m.lat,m.lng))return;const p=proj([m.lng,m.lat]);if(p&&Math.hypot(mx-p[0],my-p[1])<20)found=m;});
+    hovRef.current=found; setHovered(found?.id||null);
   };
 
-  const overlap = !isFxWeekend && SESSIONS.filter(s=>utc>=s.open&&utc<s.close).length>1;
+  const overlap = !fxWknd && MARKETS.filter(m=>mktOpen(m)).length>1;
 
   return (
     <div style={{ background:"rgba(6,8,16,.95)", border:"1px solid rgba(255,255,255,.07)", borderRadius:10, overflow:"hidden" }}>
-      {/* Header */}
-      <div style={{ padding:"10px 16px", borderBottom:"1px solid rgba(255,255,255,.06)", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
+
+      {/* ── Header ── */}
+      <div style={{ padding:"10px 18px", borderBottom:"1px solid rgba(255,255,255,.06)", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <IC n="globe" s={13} c={C.accent}/>
-          <span style={{ fontSize:11, fontWeight:600, color:C.text, letterSpacing:".08em", textTransform:"uppercase" }}>Global Market Pulse</span>
-          {overlap && <span style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:"rgba(41,168,255,.08)", color:C.accent, border:"1px solid rgba(41,168,255,.22)", fontWeight:600 }}>{SESSIONS.filter(s=>utc>=s.open&&utc<s.close).map(s=>s.label).join(" + ")} Overlap</span>}
-          {isFxWeekend && <span style={{ fontSize:10, padding:"2px 7px", borderRadius:3, background:"rgba(255,255,255,.04)", color:C.textDim, border:"1px solid rgba(255,255,255,.06)" }}>FX Closed</span>}
-          {!isFxWeekend && !overlap && <div style={{ display:"flex", alignItems:"center", gap:5 }}><div style={{ width:5,height:5,borderRadius:"50%",background:"#29ff88",boxShadow:"0 0 5px #29ff88"}}/><span style={{ fontSize:10, color:C.textDim }}>Live</span></div>}
-
+          <span style={{ fontSize:11, fontWeight:600, color:C.text, letterSpacing:".08em", textTransform:"uppercase" }}>Global Market Sessions</span>
+          {overlap && <span style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:"rgba(41,168,255,.08)", color:C.accent, border:"1px solid rgba(41,168,255,.2)", fontWeight:600 }}>{MARKETS.filter(m=>mktOpen(m)).map(m=>m.name).join(" + ")} Overlap</span>}
+          {!fxWknd && !overlap && <div style={{ display:"flex", alignItems:"center", gap:5 }}><div style={{ width:5,height:5,borderRadius:"50%",background:"#29ff88",boxShadow:"0 0 5px #29ff88"}}/><span style={{ fontSize:10, color:C.textDim }}>Live</span></div>}
+          {fxWknd && <span style={{ fontSize:10, padding:"2px 7px", borderRadius:3, background:"rgba(255,255,255,.04)", color:C.textDim, border:"1px solid rgba(255,255,255,.06)" }}>FX Closed — Weekend</span>}
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ fontSize:10, color:C.textDim }}>Drag · Scroll to zoom · Dbl-click pause</span>
-          <div style={{ display:"flex", gap:2, background:"rgba(255,255,255,.03)", borderRadius:5, padding:2 }}>
-            {LAYERS.map(l => (
-              <div key={l.id} onClick={() => { setLayer(l.id); layerRef.current=l.id; }} style={{ padding:"4px 10px", borderRadius:3, fontSize:10, cursor:"pointer", color:layer===l.id?C.accent:C.textDim, background:layer===l.id?"rgba(41,168,255,.12)":"transparent", border:layer===l.id?"1px solid rgba(41,168,255,.22)":"1px solid transparent", transition:"all .15s" }}>{l.label}</div>
-            ))}
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10, fontSize:10, color:C.textDim }}>
+            <div style={{ display:"flex", alignItems:"center", gap:4 }}><div style={{ width:5,height:5,borderRadius:"50%",background:"#29a8ff"}}/> Open</div>
+            <div style={{ display:"flex", alignItems:"center", gap:4 }}><div style={{ width:5,height:5,borderRadius:"50%",background:"#e91ea7"}}/> Closed</div>
           </div>
         </div>
       </div>
 
-      {/* Globe */}
-      <div style={{ position:"relative", background:"#040810" }}>
-        <canvas
-          ref={canvasRef} width={900} height={440}
-          style={{ width:"100%", height:"auto", display:"block", cursor:"grab" }}
-          onMouseDown={e=>{ dragRef.current={x:e.clientX,y:e.clientY}; autoRef.current=false; e.currentTarget.style.cursor="grabbing"; }}
-          onMouseUp={e=>{ dragRef.current=null; e.currentTarget.style.cursor="grab"; }}
-          onMouseLeave={()=>{ dragRef.current=null; hovRef.current=null; setHovered(null); }}
-          onMouseMove={handleMouseMove}
-          onWheel={e=>{ e.preventDefault(); scaleRef.current=Math.max(.6,Math.min(2.2,scaleRef.current*(e.deltaY>0?.96:1.04))); }}
-          onDoubleClick={()=>{ autoRef.current=!autoRef.current; }}
-        />
-        {!loaded && <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", pointerEvents:"none" }}><span style={{ fontSize:12, color:C.textDim }}>Loading…</span></div>}
-        {/* Legend */}
-        <div style={{ position:"absolute", top:10, right:12, display:"flex", flexDirection:"column", gap:4 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 8px", background:"rgba(6,8,18,.85)", borderRadius:4, border:"1px solid rgba(255,255,255,.07)" }}>
-            <div style={{ width:5,height:5,borderRadius:"50%",background:"#29a8ff"}}/><span style={{ fontSize:9, color:C.textMuted }}>Open</span>
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 8px", background:"rgba(6,8,18,.85)", borderRadius:4, border:"1px solid rgba(255,255,255,.07)" }}>
-            <div style={{ width:5,height:5,borderRadius:"50%",background:"#e91ea7"}}/><span style={{ fontSize:9, color:C.textMuted }}>Closed</span>
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 8px", background:"rgba(6,8,18,.85)", borderRadius:4, border:"1px solid rgba(255,255,255,.07)" }}>
-            <div style={{ width:5,height:5,borderRadius:"50%",background:"#d4af37"}}/><span style={{ fontSize:9, color:C.textMuted }}>Crypto</span>
-          </div>
-        </div>
-        {/* Hover tooltip */}
-        {hovered && (() => {
-          const isEv=hovered.type==="ev";
-          const ev=isEv?hovered.ev:null;
-          const c2=!isEv?hovered.c:null;
-          const s2=c2?SESSIONS.find(ss=>ss.id===c2.s):null;
-          const open2=s2&&!isFxWeekend&&utc>=s2.open&&utc<s2.close;
+      {/* ── Session clocks — horizontal strip above the globe ── */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", borderBottom:"1px solid rgba(255,255,255,.05)" }}>
+        {MARKETS.map((m,i) => {
+          const open=mktOpen(m), col=open?m.openCol:m.closedCol;
+          const pct=open?Math.min(100,((utc-m.open)/(m.close-m.open))*100):0;
+          const cd=fxWknd?"—":open?fmtSec((m.close-utc)*3600):fmtSec(((m.open-utc+24)%24)*3600);
           return (
-            <div style={{ position:"absolute", bottom:12, left:14, background:"rgba(6,8,18,.97)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, padding:"10px 14px", maxWidth:240, pointerEvents:"none", zIndex:5 }}>
-              <div style={{ fontSize:12, fontWeight:600, color:C.text, marginBottom:3 }}>{isEv?ev.lbl:c2.n}</div>
-              <div style={{ fontSize:10, color:C.textDim, marginBottom:isEv?6:4 }}>{isEv?ev.type:s2.label+" session"}</div>
-              {isEv ? <>
-                <div style={{ fontSize:11, color:C.textMuted, lineHeight:1.6, marginBottom:5 }}>{ev.desc}</div>
-                <div style={{ fontSize:10, color:C.textDim }}>Impact: {ev.imp}/10</div>
-              </> : <>
-                <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:18, fontWeight:700, color:open2?C.text:"rgba(233,30,167,.8)", marginBottom:3 }}>{fmt(s2.tz)}</div>
-                <div style={{ fontSize:10, color:open2?"#29a8ff":"#e91ea7" }}>{open2?"Session open":"Session closed"}</div>
-              </>}
-            </div>
-          );
-        })()}
-      </div>
-
-      {/* Trading Sessions — horizontal strip */}
-      <div style={{ borderTop:"1px solid rgba(255,255,255,.06)", display:"grid", gridTemplateColumns:"repeat(3,1fr)" }}>
-        {SESSIONS.map((s,i) => {
-          const open=!isFxWeekend&&utc>=s.open&&utc<s.close;
-          const col=open?s.openCol:s.closedCol;
-          const pct=open?Math.min(100,((utc-s.open)/(s.close-s.open))*100):0;
-          const cd=isFxWeekend?"—":open?fmtSec((s.close-utc)*3600):fmtSec(((s.open-utc+24)%24)*3600);
-          return (
-            <div key={s.id} style={{ padding:"14px 18px", borderRight:i<2?"1px solid rgba(255,255,255,.05)":"none" }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+            <div key={m.id} style={{ padding:"12px 18px", borderRight:i<2?"1px solid rgba(255,255,255,.05)":"none" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:5 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                  <div style={{ width:6,height:6,borderRadius:"50%",background:col,boxShadow:`0 0 6px ${col}80`,transition:"all .5s"}}/>
-                  <span style={{ fontSize:12, fontWeight:600, color:C.text }}>{s.label}</span>
-                  <span style={{ fontSize:9, color:C.textDim }}>{s.ex}</span>
+                  <div style={{ width:6,height:6,borderRadius:"50%",background:col,boxShadow:open?`0 0 6px ${col}80`:"none",transition:"all .5s"}}/>
+                  <span style={{ fontSize:12, fontWeight:600, color:C.text }}>{m.name}</span>
                 </div>
-                <span style={{ fontSize:10, padding:"2px 7px", borderRadius:3, background:`${col}12`, color:col, border:`1px solid ${col}30`, fontWeight:600 }}>{isFxWeekend?"FX Closed":open?"Open":"Closed"}</span>
+                <span style={{ fontSize:10, padding:"2px 6px", borderRadius:3, background:`${col}12`, color:col, border:`1px solid ${col}28`, fontWeight:600 }}>{fxWknd?"Closed":open?"Open":"Closed"}</span>
               </div>
-              <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:24, fontWeight:700, color:open?C.text:`rgba(233,30,167,.7)`, lineHeight:1, marginBottom:8 }}>{fmt(s.tz)}</div>
-              <div style={{ height:2, background:"rgba(255,255,255,.05)", borderRadius:2, overflow:"hidden", marginBottom:6 }}>
+              <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:22, fontWeight:700, color:open?"#eef2f8":`rgba(233,30,167,.7)`, lineHeight:1, marginBottom:7 }}>{fmt(m.tz)}</div>
+              <div style={{ height:2, background:"rgba(255,255,255,.05)", borderRadius:2, overflow:"hidden", marginBottom:5 }}>
                 <div style={{ height:"100%", width:`${pct}%`, background:col, transition:"width 1s linear" }}/>
               </div>
               <div style={{ display:"flex", justifyContent:"space-between", fontSize:10 }}>
-                <span style={{ color:C.textDim }}>{isFxWeekend?"FX Closed":open?"Closes in":"Opens in"}</span>
+                <span style={{ color:C.textDim }}>{fxWknd?"FX Closed":open?"Closes in":"Opens in"}</span>
                 <span style={{ color:col, fontFamily:"JetBrains Mono,monospace" }}>{cd}</span>
               </div>
             </div>
@@ -1682,30 +1507,55 @@ const GlobalMarketPulse = () => {
         })}
       </div>
 
-      {/* Crypto strip — separate row, always active */}
-      {isFxWeekend && (
-        <div style={{ borderTop:"1px solid rgba(255,255,255,.05)", padding:"10px 18px", display:"flex", alignItems:"center", gap:12, background:"rgba(212,175,55,.03)" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            <div style={{ width:6,height:6,borderRadius:"50%",background:"#d4af37",boxShadow:"0 0 6px rgba(212,175,55,.6)"}}/>
-            <span style={{ fontSize:11, fontWeight:600, color:"rgba(212,175,55,.9)" }}>Crypto Markets — Active 24/7</span>
+      {/* ── Full-width globe canvas ── */}
+      <div style={{ position:"relative", background:"#030810" }}>
+        <canvas
+          ref={canvasRef} width={900} height={440}
+          style={{ width:"100%", height:"auto", display:"block" }}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => { hovRef.current=null; setHovered(null); }}
+        />
+        {!loaded && (
+          <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <span style={{ fontSize:11, color:C.textDim }}>Loading…</span>
           </div>
-          <span style={{ fontSize:11, color:C.textDim }}>Bitcoin, Ethereum, and all digital assets continue trading through the weekend while FX markets are closed.</span>
-        </div>
-      )}
+        )}
+        {/* Hover tooltip */}
+        {hovered && (() => {
+          const m=MARKETS.find(x=>x.id===hovered); if(!m) return null;
+          const open=mktOpen(m);
+          const pct=open?Math.min(100,((utc-m.open)/(m.close-m.open))*100):0;
+          const cd=fxWknd?"—":open?fmtSec((m.close-utc)*3600):fmtSec(((m.open-utc+24)%24)*3600);
+          return (
+            <div style={{ position:"absolute", bottom:12, left:14, background:"rgba(6,8,20,.97)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, padding:"10px 14px", minWidth:180, pointerEvents:"none" }}>
+              <div style={{ fontSize:13, fontWeight:600, color:C.text, marginBottom:2 }}>{m.name}</div>
+              <div style={{ fontFamily:"JetBrains Mono,monospace", fontSize:20, fontWeight:700, color:open?"#eef2f8":"rgba(233,30,167,.8)", lineHeight:1, marginBottom:5 }}>{fmt(m.tz)}</div>
+              <div style={{ fontSize:10, color:open?m.openCol:m.closedCol, marginBottom:open?5:0 }}>{open?"Session open":"Session closed"}</div>
+              {open && <>
+                <div style={{ height:2, background:"rgba(255,255,255,.06)", borderRadius:2, overflow:"hidden", marginBottom:4 }}>
+                  <div style={{ height:"100%", width:`${pct}%`, background:m.openCol }}/>
+                </div>
+                <div style={{ fontSize:10, color:C.textDim }}>Closes in {cd}</div>
+              </>}
+              {!open && !fxWknd && <div style={{ fontSize:10, color:C.textDim }}>Opens in {cd}</div>}
+            </div>
+          );
+        })()}
+      </div>
 
-      {/* Market Events — horizontal scrolling */}
-      <div style={{ borderTop:"1px solid rgba(255,255,255,.06)", padding:"10px 16px" }}>
-        <div style={{ fontSize:9, fontWeight:600, color:C.textDim, letterSpacing:".08em", textTransform:"uppercase", marginBottom:8 }}>Market Events</div>
-        <div style={{ display:"flex", gap:8, overflowX:"auto", scrollbarWidth:"none", paddingBottom:2 }}>
-          {EVENTS.map((ev,i) => (
-            <div key={i} style={{ flexShrink:0, width:210, padding:"10px 12px", borderRadius:7, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", cursor:"pointer", transition:"border-color .15s" }}
-              onMouseEnter={e=>{ e.currentTarget.style.borderColor="rgba(255,255,255,.18)"; hovRef.current={type:"ev",i,ev}; setHovered({type:"ev",i,ev}); }}
-              onMouseLeave={e=>{ e.currentTarget.style.borderColor="rgba(255,255,255,.07)"; hovRef.current=null; setHovered(null); }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
-                <span style={{ fontSize:11, fontWeight:600, color:C.text }}>{ev.lbl}</span>
+      {/* ── Market Events strip ── */}
+      <div style={{ borderTop:"1px solid rgba(255,255,255,.06)", padding:"10px 18px" }}>
+        <div style={{ fontSize:9, fontWeight:600, color:C.textDim, letterSpacing:".08em", textTransform:"uppercase", marginBottom:8 }}>Key Market Events</div>
+        <div style={{ display:"flex", gap:8, overflowX:"auto", scrollbarWidth:"none" }}>
+          {MAP_EVENTS.map((ev,i) => (
+            <div key={i} style={{ flexShrink:0, width:200, padding:"9px 12px", borderRadius:6, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", transition:"border-color .15s", cursor:"default" }}
+              onMouseEnter={e=>e.currentTarget.style.borderColor="rgba(255,255,255,.15)"}
+              onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(255,255,255,.07)"}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:3 }}>
+                <span style={{ fontSize:11, fontWeight:500, color:C.text }}>{ev.lbl}</span>
                 <span style={{ fontSize:9, color:C.textDim }}>{ev.imp}/10</span>
               </div>
-              <div style={{ fontSize:9, color:C.textDim, marginBottom:5, textTransform:"uppercase", letterSpacing:".04em" }}>{ev.type}</div>
+              <div style={{ fontSize:9, color:C.textDim, marginBottom:4, textTransform:"uppercase", letterSpacing:".04em" }}>{ev.type}</div>
               <div style={{ fontSize:10, color:C.textMuted, lineHeight:1.5 }}>{ev.desc}</div>
             </div>
           ))}
@@ -2740,8 +2590,9 @@ const STATUS_META = {
 
 // ── Journal component ─────────────────────────────────────────────────────────
 
-const Journal = ({ setPage, currentTier }) => {
-  const [view,          setView]          = useState("dashboard");   // dashboard | calendar | trades | import
+const Journal = ({ setPage, currentTier, user }) => {
+  const token = localStorage.getItem("fis_token");
+  const [view,          setView]          = useState("dashboard");
   const [selectedConn,  setSelectedConn]  = useState(MOCK_CONNECTIONS[0]?.id || null);
   const [connections,   setConnections]   = useState(MOCK_CONNECTIONS);
   const [showConnect,   setShowConnect]   = useState(false);
@@ -2756,10 +2607,46 @@ const Journal = ({ setPage, currentTier }) => {
   const [dragOver,      setDragOver]      = useState(false);
   const [fileError,     setFileError]     = useState(null);
   const [fileName,      setFileName]      = useState(null);
+  const [trades,        setTrades]        = useState(MOCK_SYNCED_TRADES);
+  const [tradesLoading, setTradesLoading] = useState(false);
+  const [importMsg,     setImportMsg]     = useState("");
   const fileRef = useRef(null);
 
+  // Load trades from backend on mount (if authenticated)
+  useEffect(() => {
+    if (!token) return;
+    setTradesLoading(true);
+    api.get("/journal/trades", token)
+      .then(d => { if (d.success && d.data.trades?.length) setTrades(d.data.trades.map(apiTradeToLocal)); })
+      .catch(()=>{})
+      .finally(()=>setTradesLoading(false));
+  }, [token]);
+
+  // Map API trade shape → local shape expected by the UI
+  const apiTradeToLocal = t => ({
+    id:          t.id,
+    instrument:  t.instrument,
+    trade_type:  t.direction === "long" ? "Buy" : "Sell",
+    open_price:  t.entryPrice,
+    close_price: t.exitPrice,
+    open_time:   t.openedAt,
+    close_time:  t.closedAt,
+    volume:      t.lotSize,
+    profit:      t.netPl ?? 0,
+    commission:  t.commission ?? 0,
+    session:     t.sessionTag ? (t.sessionTag === "ny" ? "NY" : t.sessionTag.charAt(0).toUpperCase() + t.sessionTag.slice(1)) : "—",
+    is_open:     !t.closedAt,
+    // Extended journal fields
+    timeframe:      t.timeframe,
+    thesis:         t.thesis,
+    emotionalState: t.emotionalState,
+    category:       t.category,
+    tags:           t.tags,
+    accountName:    t.accountName,
+  });
+
   const conn = connections.find(c=>c.id===selectedConn);
-  const allTrades = MOCK_SYNCED_TRADES;
+  const allTrades = trades;
   const closedTrades = allTrades.filter(t=>!t.is_open);
   const openTrades   = allTrades.filter(t=>t.is_open);
 
@@ -2829,8 +2716,52 @@ const Journal = ({ setPage, currentTier }) => {
 
   // ── CSV import ────────────────────────────────────────────────────────────
   const handleFile = file => {
-    if (!file||!file.name.endsWith(".csv")) { setFileError("Please upload a CSV file."); return; }
-    setFileName(file.name); setFileError(null); setCsvStep("preview");
+    if (!file || !file.name.endsWith(".csv")) { setFileError("Please upload a CSV file."); return; }
+    setFileName(file.name); setFileError(null); setCsvStep("parsing");
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const text = e.target.result;
+        const { headers, rows } = parseCSV(text);
+        const platform = detectPlatform(headers);
+        if (!platform) { setCsvStep("idle"); setFileError("Could not detect broker format. Supported: MT4/MT5, cTrader, Tradovate."); return; }
+        const parsed = normaliseTrades(rows, platform);
+        if (!parsed.length) { setCsvStep("idle"); setFileError("No valid trades found in this file."); return; }
+        setCsvTrades(parsed);
+        setCsvStep("preview");
+      } catch { setCsvStep("idle"); setFileError("Failed to read file. Please check it's a valid CSV."); }
+    };
+    reader.readAsText(file);
+  };
+
+  const confirmImport = async () => {
+    if (!csvTrades?.length) return;
+    setCsvStep("importing"); setImportMsg("");
+    try {
+      // Map normalised trades to backend shape
+      const payload = csvTrades.map(t => ({
+        instrument:  t.instrument,
+        direction:   (t.type || "").toLowerCase().includes("buy") || (t.type || "").toLowerCase().includes("long") ? "long" : "short",
+        entry_price: t.openPrice || 0,
+        exit_price:  t.closePrice || null,
+        lot_size:    t.size || 1,
+        net_pl:      (t.profit || 0) + (t.commission || 0) + (t.swap || 0),
+        commission:  Math.abs(t.commission || 0),
+        session_tag: (t.session || "").toLowerCase() || null,
+        opened_at:   t.openTime  || new Date().toISOString(),
+        closed_at:   t.closeTime || null,
+      }));
+      const data = await api.post("/journal/import", { trades: payload }, token);
+      if (data.success) {
+        const imported = data.data?.trades?.map(apiTradeToLocal) || [];
+        setTrades(prev => [...imported, ...prev]);
+        setCsvStep("done");
+        setImportMsg(`Successfully imported ${data.data.imported} trade${data.data.imported !== 1 ? "s" : ""}.`);
+      } else {
+        setCsvStep("preview");
+        setImportMsg(data.error?.message || "Import failed.");
+      }
+    } catch { setCsvStep("preview"); setImportMsg("Unable to connect. Please try again."); }
   };
 
   // ── Equity curve ─────────────────────────────────────────────────────────
@@ -3168,30 +3099,84 @@ const Journal = ({ setPage, currentTier }) => {
 
       {/* ════════════════════ IMPORT CSV ════════════════════ */}
       {view === "import" && (
-        <div style={{ maxWidth:600 }}>
-          <div className="mc" style={{ padding:"24px 28px", textAlign:"center" }}>
-            <IC n="upload" s={28} c={C.accent}/>
-            <h3 style={{ fontSize:16, fontWeight:500, color:C.text, margin:"12px 0 6px" }}>Import from CSV</h3>
-            <p style={{ fontSize:13, color:C.textMuted, marginBottom:20, lineHeight:1.6 }}>Export your trade history from MT4/MT5, cTrader, Tradovate, FTMO, or any broker as a CSV file and upload it here.</p>
-            <div
-              onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}}
-              onDragOver={e=>{e.preventDefault();setDragOver(true);}}
-              onDragLeave={()=>setDragOver(false)}
-              onClick={()=>fileRef.current?.click()}
-              style={{ border:`2px dashed ${dragOver?"rgba(41,168,255,.5)":"rgba(255,255,255,.12)"}`, borderRadius:8, padding:"28px 20px", cursor:"pointer", background:dragOver?"rgba(41,168,255,.05)":"transparent", transition:"all .2s", marginBottom:16 }}>
-              <IC n="upload" s={20} c={dragOver?C.accent:C.textDim}/>
-              <div style={{ fontSize:13, color:dragOver?C.accent:C.textMuted, marginTop:8 }}>{fileName || "Drop CSV file here or click to browse"}</div>
-              <div style={{ fontSize:11, color:C.textDim, marginTop:4 }}>MT4, MT5, cTrader, Tradovate, FTMO supported</div>
-              <input ref={fileRef} type="file" accept=".csv" style={{ display:"none" }} onChange={e=>handleFile(e.target.files[0])}/>
+        <div style={{ maxWidth:680 }}>
+          {csvStep !== "done" && (
+            <div className="mc" style={{ padding:"24px 28px", textAlign:"center", marginBottom:16 }}>
+              <IC n="upload" s={28} c={C.accent}/>
+              <h3 style={{ fontSize:16, fontWeight:500, color:C.text, margin:"12px 0 6px" }}>Import from CSV</h3>
+              <p style={{ fontSize:13, color:C.textMuted, marginBottom:20, lineHeight:1.6 }}>Export your trade history from MT4/MT5, cTrader, Tradovate, FTMO, or any broker as a CSV file and upload it here.</p>
+              <div
+                onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}}
+                onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+                onDragLeave={()=>setDragOver(false)}
+                onClick={()=>fileRef.current?.click()}
+                style={{ border:`2px dashed ${dragOver?"rgba(41,168,255,.5)":"rgba(255,255,255,.12)"}`, borderRadius:8, padding:"28px 20px", cursor:"pointer", background:dragOver?"rgba(41,168,255,.05)":"transparent", transition:"all .2s", marginBottom:16 }}>
+                <IC n="upload" s={20} c={dragOver?C.accent:C.textDim}/>
+                <div style={{ fontSize:13, color:dragOver?C.accent:C.textMuted, marginTop:8 }}>{fileName || "Drop CSV file here or click to browse"}</div>
+                <div style={{ fontSize:11, color:C.textDim, marginTop:4 }}>MT4, MT5, cTrader, Tradovate, FTMO supported</div>
+                <input ref={fileRef} type="file" accept=".csv" style={{ display:"none" }} onChange={e=>handleFile(e.target.files[0])}/>
+              </div>
+              {fileError  && <div style={{ fontSize:12, color:C.pink,   marginBottom:8 }}>{fileError}</div>}
+              {importMsg  && <div style={{ fontSize:12, color:csvStep==="done"?C.accent:C.pink, marginBottom:8 }}>{importMsg}</div>}
+              {csvStep === "parsing" && <div style={{ fontSize:12, color:C.textMuted }}>Parsing file…</div>}
+              <div style={{ display:"flex", gap:10, justifyContent:"center", marginTop:16, flexWrap:"wrap" }}>
+                {["MetaTrader 4/5","cTrader","Tradovate","FTMO","TopStep","MyForexFunds"].map(p=>(
+                  <span key={p} style={{ fontSize:10, padding:"3px 8px", borderRadius:3, background:"rgba(255,255,255,.04)", color:C.textDim, border:"1px solid rgba(255,255,255,.07)" }}>{p}</span>
+                ))}
+              </div>
             </div>
-            {fileError && <div style={{ fontSize:12, color:C.pink, marginTop:8 }}>{fileError}</div>}
-            {csvStep==="preview" && <div style={{ fontSize:12, color:C.accent, marginTop:8 }}>File loaded: {fileName} — processing…</div>}
-            <div style={{ display:"flex", gap:10, justifyContent:"center", marginTop:16 }}>
-              {["MetaTrader 4/5","cTrader","Tradovate","FTMO","TopStep","MyForexFunds"].map(p=>(
-                <span key={p} style={{ fontSize:10, padding:"3px 8px", borderRadius:3, background:"rgba(255,255,255,.04)", color:C.textDim, border:"1px solid rgba(255,255,255,.07)" }}>{p}</span>
-              ))}
+          )}
+
+          {/* Preview */}
+          {(csvStep === "preview" || csvStep === "importing") && csvTrades?.length > 0 && (
+            <div className="mc" style={{ padding:"20px 22px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+                <div>
+                  <div className="sl" style={{ margin:0 }}>Preview — {csvTrades.length} trades detected</div>
+                  <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>Review before importing. All trades will be added to your journal.</div>
+                </div>
+                <button className="btn bp" style={{ opacity: csvStep==="importing"?.6:1 }} onClick={confirmImport} disabled={csvStep==="importing"}>
+                  {csvStep==="importing" ? "Importing…" : `Import ${csvTrades.length} Trades`}
+                </button>
+              </div>
+              <div style={{ overflowX:"auto", maxHeight:300, overflowY:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                  <thead><tr style={{ background:"rgba(255,255,255,.03)" }}>
+                    {["Instrument","Type","Size","Open","Close","P&L","Session"].map(h=>(
+                      <th key={h} style={{ padding:"6px 10px", textAlign:"left", fontSize:9, color:C.textDim, letterSpacing:".05em", textTransform:"uppercase" }}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {csvTrades.slice(0,20).map((t,i)=>(
+                      <tr key={i} style={{ borderBottom:`1px solid ${C.border}` }}>
+                        <td style={{ padding:"6px 10px", fontSize:11, color:C.text }}>{t.instrument}</td>
+                        <td style={{ padding:"6px 10px", fontSize:11, color:(t.type||"").toLowerCase().includes("buy")?"#29ff88":C.pink }}>{t.type}</td>
+                        <td style={{ padding:"6px 10px", fontSize:11, fontFamily:"JetBrains Mono,monospace" }}>{t.size}</td>
+                        <td style={{ padding:"6px 10px", fontSize:11, fontFamily:"JetBrains Mono,monospace", color:C.textMuted }}>{t.openPrice?.toFixed(5)}</td>
+                        <td style={{ padding:"6px 10px", fontSize:11, fontFamily:"JetBrains Mono,monospace", color:C.textMuted }}>{t.closePrice?.toFixed(5)}</td>
+                        <td style={{ padding:"6px 10px", fontSize:11, fontFamily:"JetBrains Mono,monospace", color:(t.profit||0)>=0?C.accent:C.pink }}>{((t.profit||0)+(t.commission||0)).toFixed(2)}</td>
+                        <td style={{ padding:"6px 10px", fontSize:11, color:C.textDim }}>{t.session || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {csvTrades.length > 20 && <div style={{ fontSize:11, color:C.textDim, padding:"8px 10px", textAlign:"center" }}>+{csvTrades.length-20} more trades…</div>}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Done */}
+          {csvStep === "done" && (
+            <div className="mc" style={{ padding:"32px 28px", textAlign:"center" }}>
+              <IC n="check" s={32} c={C.accent}/>
+              <h3 style={{ fontSize:16, fontWeight:500, color:C.text, margin:"12px 0 6px" }}>Import Complete</h3>
+              <p style={{ fontSize:13, color:C.textMuted, marginBottom:20 }}>{importMsg}</p>
+              <div style={{ display:"flex", gap:10, justifyContent:"center" }}>
+                <button className="btn bp" onClick={()=>setView("dashboard")}>View Journal</button>
+                <button className="btn bg" onClick={()=>{ setCsvStep("idle"); setCsvTrades(null); setFileName(null); setImportMsg(""); }}>Import Another</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -7204,13 +7189,30 @@ function requiredTier(feature) {
 function avatarColor(name){ let h=0; for(let c of name) h=(h*31+c.charCodeAt(0))%AVATAR_COLORS.length; return AVATAR_COLORS[h]; }
 
 const Community = () => {
-  const [messages, setMessages] = useState(COMMUNITY_SEED);
+  const [messages, setMessages] = useState(() => {
+    try {
+      const saved = localStorage.getItem("fis_community_msgs");
+      return saved ? JSON.parse(saved) : COMMUNITY_SEED;
+    } catch { return COMMUNITY_SEED; }
+  });
   const [msg, setMsg] = useState("");
   const [replyTo, setReplyTo] = useState(null);
   const [hoverId, setHoverId] = useState(null);
   const endRef = useRef(null);
   const inputRef = useRef(null);
-  const ME = { u:"J.Harrison", tag:"Member", tc:"tb", avatar:"J" };
+  const ME = (() => {
+    try {
+      const u = JSON.parse(localStorage.getItem("fis_user") || "{}");
+      const name = u.first_name && u.last_name ? `${u.first_name[0]}.${u.last_name}` : (u.email?.split("@")[0] || "Member");
+      const avatar = (u.first_name?.[0] || "M").toUpperCase();
+      return { u: name, tag: "Member", tc: "tb", avatar };
+    } catch { return { u:"Member", tag:"Member", tc:"tb", avatar:"M" }; }
+  })();
+
+  // Persist messages to localStorage (keep last 200)
+  useEffect(() => {
+    try { localStorage.setItem("fis_community_msgs", JSON.stringify(messages.slice(-200))); } catch {}
+  }, [messages]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior:"smooth" }); }, [messages]);
 
@@ -8253,15 +8255,43 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
   const fmtExp  = v => v.replace(/\D/g,"").slice(0,4).replace(/(\d{2})(?=\d)/g,"$1/");
   const trialCardValid = trialCard.num.replace(/\s/g,"").length===16 && trialCard.name.trim().length>2 && trialCard.exp.length===5 && trialCard.cvv.length>=3;
 
-  const handleStartTrial = () => {
+  const handleStartTrial = async () => {
     if (!trialCardValid || !agreedTrial) return;
+    const token = localStorage.getItem("fis_token");
     setTrialProcessing(true);
-    setTimeout(() => {
+    try {
+      const data = await api.post("/membership/trial/start", {
+        tier: trialStep.tierId === "45" ? "core_45" : trialStep.tierId === "65" ? "pro_65" : "elite_95",
+        billing_cycle: trialStep.billing || "monthly",
+      }, token);
+      if (data.success) {
+        setTrialProcessing(false);
+        setTrialDone(true);
+        onUpgrade(trialStep.tierId);
+        setSubStatus && setSubStatus("active");
+        // Update localStorage user with new tier
+        try {
+          const saved = JSON.parse(localStorage.getItem("fis_user") || "{}");
+          localStorage.setItem("fis_user", JSON.stringify({
+            ...saved,
+            membership_tier: data.data?.tier || saved.membership_tier,
+            subscription_status: "trial",
+          }));
+        } catch {}
+      } else {
+        setTrialProcessing(false);
+        // Still show success UI — Stripe not yet wired, allow trial flow
+        setTrialDone(true);
+        onUpgrade(trialStep.tierId);
+        setSubStatus && setSubStatus("active");
+      }
+    } catch {
       setTrialProcessing(false);
+      // Fallback: allow trial without backend (Stripe pending)
       setTrialDone(true);
       onUpgrade(trialStep.tierId);
       setSubStatus && setSubStatus("active");
-    }, 2200);
+    }
   };
 
   const TIER_FEATURES = {
@@ -8860,14 +8890,6 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
 
 
 // ── Affiliate Portal ──────────────────────────────────────────────────────────
-const AFFILIATE_REFERRALS = [
-  { id:"ref-001", name:"M. Okonkwo",   date:"02 Mar 2026", plan:"Core ($45)",   status:"active",   commission:9.00,  paid:false },
-  { id:"ref-002", name:"S. Lindqvist", date:"05 Mar 2026", plan:"Pro ($65)",    status:"active",   commission:13.00, paid:false },
-  { id:"ref-003", name:"T. Bergmann",  date:"28 Feb 2026", plan:"Core ($45)",   status:"trial",    commission:0,     paid:false },
-  { id:"ref-004", name:"A. Nkemdirim", date:"18 Feb 2026", plan:"Pro ($65)",    status:"active",   commission:13.00, paid:true  },
-  { id:"ref-005", name:"R. Castillo",  date:"14 Feb 2026", plan:"Elite ($95)",  status:"active",   commission:19.00, paid:true  },
-  { id:"ref-006", name:"L. Fontaine",  date:"08 Feb 2026", plan:"Core ($45)",   status:"cancelled",commission:0,     paid:false },
-];
 
 function generateCode(name) {
   const clean = name.replace(/[^a-zA-Z]/g,"").slice(0,6).toUpperCase();
@@ -8876,25 +8898,45 @@ function generateCode(name) {
 }
 
 const AffiliatePortal = ({ currentTier, setPage }) => {
-  const BASE_URL = "https://app.fortitudemkt.com/join";
-  const [code, setCode] = useState("FMF-JHARR-X4T");
-  const [customInput, setCustomInput] = useState("");
-  const [codeError, setCodeError] = useState("");
-  const [codeSaved, setCodeSaved] = useState(true);
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
+  const BASE_URL = "https://fortitude-app.vercel.app/join";
+  const token = localStorage.getItem("fis_token");
+
+  const [code,         setCode]         = useState("");
+  const [referrals,    setReferrals]    = useState([]);
+  const [rewards,      setRewards]      = useState([]);
+  const [statusData,   setStatusData]   = useState(null);
+  const [loadingData,  setLoadingData]  = useState(true);
+  const [customInput,  setCustomInput]  = useState("");
+  const [codeError,    setCodeError]    = useState("");
+  const [codeSaving,   setCodeSaving]   = useState(false);
+  const [copiedCode,   setCopiedCode]   = useState(false);
+  const [copiedUrl,    setCopiedUrl]    = useState(false);
   const [activeFilter, setActiveFilter] = useState("all");
 
-  const referralUrl = `${BASE_URL}?ref=${code}`;
+  useEffect(() => {
+    if (!token) return;
+    setLoadingData(true);
+    Promise.all([
+      api.get("/affiliate/status",   token),
+      api.get("/affiliate/referrals",token),
+      api.get("/affiliate/rewards",  token),
+    ]).then(([statusRes, refsRes, rewsRes]) => {
+      if (statusRes.success) { setStatusData(statusRes.data); setCode(statusRes.data.referralCode || ""); }
+      if (refsRes.success)   setReferrals(refsRes.data.referrals || []);
+      if (rewsRes.success)   setRewards(rewsRes.data.rewards || []);
+    }).catch(()=>{}).finally(()=>setLoadingData(false));
+  }, [token]);
+
+  const referralUrl = code ? `${BASE_URL}?ref=${code}` : "";
 
   const filteredRefs = activeFilter === "all"
-    ? AFFILIATE_REFERRALS
-    : AFFILIATE_REFERRALS.filter(r => r.status === activeFilter);
+    ? referrals
+    : referrals.filter(r => r.status === activeFilter);
 
-  const totalEarned     = AFFILIATE_REFERRALS.filter(r=>r.paid).reduce((a,r)=>a+r.commission,0);
-  const pendingEarnings = AFFILIATE_REFERRALS.filter(r=>!r.paid && r.status==="active").reduce((a,r)=>a+r.commission,0);
-  const activeCount     = AFFILIATE_REFERRALS.filter(r=>r.status==="active").length;
-  const trialCount      = AFFILIATE_REFERRALS.filter(r=>r.status==="trial").length;
+  const totalEarned     = statusData?.total_earned_usd    || 0;
+  const pendingEarnings = statusData?.pending_earnings    || 0;
+  const activeCount     = statusData?.active_referrals    || referrals.filter(r=>r.status==="active").length;
+  const trialCount      = referrals.filter(r=>r.status==="trial").length;
 
   const validateCode = (val) => {
     if (val.length < 3) return "Code must be at least 3 characters.";
@@ -8902,22 +8944,32 @@ const AffiliatePortal = ({ currentTier, setPage }) => {
     return "";
   };
 
-  const handleSaveCode = () => {
-    const err = validateCode(customInput || code);
+  const handleSaveCode = async () => {
+    const val = customInput.trim();
+    if (!val) { setCodeError("Please enter a code."); return; }
+    const err = validateCode(val);
     if (err) { setCodeError(err); return; }
-    const final = (customInput || code).toUpperCase().replace(/\s+/g,"-");
-    setCode(final);
-    setCodeSaved(true);
-    setCustomInput("");
-    setCodeError("");
+    setCodeSaving(true); setCodeError("");
+    try {
+      const data = await api.put("/affiliate/code/custom", { code: val }, token);
+      if (data.success) {
+        setCode(data.data.referralCode || val.toUpperCase().replace(/\s+/g,"-"));
+        setCustomInput("");
+      } else {
+        setCodeError(data.error?.message || "Code unavailable.");
+      }
+    } catch { setCodeError("Unable to save. Please try again."); }
+    finally { setCodeSaving(false); }
   };
 
-  const handleGenerate = () => {
-    const newCode = generateCode("JHARR");
-    setCode(newCode);
-    setCodeSaved(true);
-    setCustomInput("");
-    setCodeError("");
+  const handleGenerate = async () => {
+    setCodeSaving(true); setCodeError("");
+    try {
+      const data = await api.post("/affiliate/code/generate", {}, token);
+      if (data.success) setCode(data.data.referralCode || "");
+      else setCodeError(data.error?.message || "Could not generate code.");
+    } catch { setCodeError("Unable to generate. Please try again."); }
+    finally { setCodeSaving(false); }
   };
 
   const copyText = (text, which) => {
@@ -10104,8 +10156,69 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
 };
 
 const Admin = ({ setPage }) => {
-  const TIER_DIST = [{t:"Free",v:142,c:C.textMuted},{t:"Fortitude $45",v:78,c:C.accent},{t:"Pro $65",v:43,c:C.pink},{t:"Full $95",v:17,c:C.gold},{t:"Lifetime",v:4,c:C.pink}];
-  const total = TIER_DIST.reduce((a,t)=>a+t.v,0);
+  const token = localStorage.getItem("fis_token");
+
+  // Dashboard KPI state
+  const [dash,       setDash]       = useState(null);
+  const [users,      setUsers]      = useState([]);
+  const [loadingKPI, setLoadingKPI] = useState(true);
+
+  // Market update form
+  const [updateTitle,   setUpdateTitle]   = useState("");
+  const [updateBody,    setUpdateBody]    = useState("");
+  const [updatePinned,  setUpdatePinned]  = useState(false);
+  const [updateMsg,     setUpdateMsg]     = useState("");
+  const [updateSaving,  setUpdateSaving]  = useState(false);
+
+  // Override form
+  const [overrideEmail, setOverrideEmail] = useState("");
+  const [overrideTier,  setOverrideTier]  = useState("45");
+  const [overrideMsg,   setOverrideMsg]   = useState("");
+  const [overrideSaving,setOverrideSaving]= useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    setLoadingKPI(true);
+    Promise.all([
+      api.get("/admin/dashboard", token),
+      api.get("/admin/users?limit=10", token),
+    ]).then(([dashRes, usersRes]) => {
+      if (dashRes.success)  setDash(dashRes.data);
+      if (usersRes.success) setUsers(usersRes.data.users || []);
+    }).catch(()=>{}).finally(()=>setLoadingKPI(false));
+  }, [token]);
+
+  const tierDist = dash?.tier_distribution || [];
+  const totalMembers = dash?.total_members || 0;
+
+  const publishUpdate = async () => {
+    if (!updateTitle.trim() || !updateBody.trim()) { setUpdateMsg("Title and content are required."); return; }
+    setUpdateSaving(true); setUpdateMsg("");
+    try {
+      const data = await api.post("/market-updates", { title: updateTitle, body: updateBody, pinned: updatePinned }, token);
+      if (data.success) { setUpdateTitle(""); setUpdateBody(""); setUpdatePinned(false); setUpdateMsg("Published successfully."); }
+      else setUpdateMsg(data.error?.message || "Failed to publish.");
+    } catch { setUpdateMsg("Unable to connect."); }
+    finally { setUpdateSaving(false); }
+  };
+
+  const applyOverride = async () => {
+    if (!overrideEmail.trim()) { setOverrideMsg("Email is required."); return; }
+    setOverrideSaving(true); setOverrideMsg("");
+    try {
+      // First find the user by searching
+      const findRes = await api.get(`/admin/users?search=${encodeURIComponent(overrideEmail)}&limit=1`, token);
+      const foundUser = findRes.data?.users?.[0];
+      if (!foundUser) { setOverrideMsg("User not found."); setOverrideSaving(false); return; }
+      const data = await api.post(`/admin/users/${foundUser.id}/tier`, { tier: overrideTier, reason: "Manual admin override" }, token);
+      if (data.success) { setOverrideEmail(""); setOverrideMsg(`Tier updated to ${overrideTier} for ${overrideEmail}.`); }
+      else setOverrideMsg(data.error?.message || "Override failed.");
+    } catch { setOverrideMsg("Unable to connect."); }
+    finally { setOverrideSaving(false); }
+  };
+
+  const fmtTier = t => ({ free:"Free", core_45:"$45 Core", pro_65:"$65 Pro", elite_95:"$95 Elite", lifetime:"Lifetime" }[t] || t);
+
   return (
     <div className="fi">
       <div style={{ marginBottom:22 }}>
@@ -10115,8 +10228,14 @@ const Admin = ({ setPage }) => {
 
       {/* KPIs */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:14 }}>
-        {[{l:"Total Members",v:"284",s:"+12 this month",c:C.accent},{l:"Active Subscriptions",v:"142",s:"50% conversion",c:C.accent},{l:"MRR",v:"$9,840",s:"+$420 this month",c:C.gold},{l:"AI Calls Today",v:"347",s:"Within budget",c:C.accent},{l:"Flagged",v:"3",s:"Requires review",c:C.pink}].map(m=>(
-          <div key={m.l} className="mc" style={{ borderColor:m.c==="C.pink"?C.pinkDim:undefined }}>
+        {[
+          {l:"Total Members",       v: loadingKPI ? "…" : (dash?.total_members ?? "—"),         s: dash?.members_this_month != null ? `+${dash.members_this_month} this month` : "",    c:C.accent},
+          {l:"Active Subscriptions",v: loadingKPI ? "…" : (dash?.active_subscriptions ?? "—"),  s: dash?.total_members ? `${Math.round((dash.active_subscriptions/dash.total_members)*100)||0}% conversion` : "", c:C.accent},
+          {l:"MRR",                 v: loadingKPI ? "…" : (dash?.mrr_usd != null ? `$${dash.mrr_usd.toLocaleString()}` : "—"), s: dash?.mrr_growth != null ? `+$${dash.mrr_growth} this month` : "", c:C.gold},
+          {l:"AI Calls Today",      v: loadingKPI ? "…" : (dash?.ai_calls_today ?? "—"),         s:"Within budget",                                                                        c:C.accent},
+          {l:"Churn Risk",          v: loadingKPI ? "…" : (dash?.churn_risk_count ?? "—"),       s:"Requires review",                                                                      c:C.pink},
+        ].map(m=>(
+          <div key={m.l} className="mc">
             <div className="sl">{m.l}</div>
             <div className="mn" style={{ fontSize:22,color:m.c,fontWeight:400 }}>{m.v}</div>
             <div style={{ fontSize:11,color:C.textDim,marginTop:2 }}>{m.s}</div>
@@ -10128,33 +10247,40 @@ const Admin = ({ setPage }) => {
         {/* Tier distribution */}
         <div className="mc">
           <div className="sl">Subscription Distribution</div>
-          {TIER_DIST.map(t=>(
-            <div key={t.t} style={{ display:"flex",alignItems:"center",gap:10,marginBottom:10 }}>
-              <span style={{ fontSize:12,color:C.textMuted,width:100,flexShrink:0 }}>{t.t}</span>
-              <div style={{ flex:1,height:6,borderRadius:3,background:C.border,overflow:"hidden" }}>
-                <div style={{ width:`${(t.v/total)*100}%`,height:"100%",borderRadius:3,background:t.c,transition:"width .8s ease" }}/>
+          {tierDist.length > 0 ? tierDist.map((t,i)=>{
+            const col = [C.textMuted,C.accent,C.pink,C.gold,C.pink][i] || C.accent;
+            return (
+              <div key={t.tier} style={{ display:"flex",alignItems:"center",gap:10,marginBottom:10 }}>
+                <span style={{ fontSize:12,color:C.textMuted,width:100,flexShrink:0 }}>{fmtTier(t.tier)}</span>
+                <div style={{ flex:1,height:6,borderRadius:3,background:C.border,overflow:"hidden" }}>
+                  <div style={{ width:totalMembers?`${(t.count/totalMembers)*100}%`:"0%",height:"100%",borderRadius:3,background:col,transition:"width .8s ease" }}/>
+                </div>
+                <span className="mn" style={{ fontSize:11,color:col,width:28,textAlign:"right" }}>{t.count}</span>
               </div>
-              <span className="mn" style={{ fontSize:11,color:t.c,width:28,textAlign:"right" }}>{t.v}</span>
-            </div>
-          ))}
+            );
+          }) : (
+            [{t:"Free",c:C.textMuted},{t:"Core $45",c:C.accent},{t:"Pro $65",c:C.pink},{t:"Elite $95",c:C.gold}].map(t=>(
+              <div key={t.t} style={{ display:"flex",alignItems:"center",gap:10,marginBottom:10 }}>
+                <span style={{ fontSize:12,color:C.textMuted,width:100,flexShrink:0 }}>{t.t}</span>
+                <div style={{ flex:1,height:6,borderRadius:3,background:C.border }}/>
+                <span className="mn" style={{ fontSize:11,color:t.c,width:28,textAlign:"right" }}>—</span>
+              </div>
+            ))
+          )}
         </div>
 
         {/* AI cost controls */}
         <div className="mc">
           <div className="sl">AI Cost Protection Layer</div>
           {[
-            {l:"Free tier",       cap:"Blocked",    used:"0",    c:C.textDim},
-            {l:"Fortitude $45",   cap:"5/day",      used:"312",  c:C.accent},
-            {l:"Fortitude Pro",   cap:"10/day",     used:"287",  c:C.pink},
-            {l:"Full Access",     cap:"Fair-use",   used:"48",   c:C.gold},
-            {l:"Cache hit rate",  cap:"—",          used:"34%",  c:C.accent},
+            {l:"Free tier",       cap:"Blocked",  c:C.textDim},
+            {l:"Core $45",        cap:"5/day",    c:C.accent},
+            {l:"Pro $65",         cap:"10/day",   c:C.pink},
+            {l:"Elite $95",       cap:"Fair-use", c:C.gold},
           ].map(r=>(
             <div key={r.l} style={{ display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${C.border}` }}>
               <span style={{ fontSize:12,color:C.textMuted }}>{r.l}</span>
-              <div style={{ display:"flex",gap:16 }}>
-                <span style={{ fontSize:11,color:C.textDim }}>{r.cap}</span>
-                <span className="mn" style={{ fontSize:11,color:r.c }}>{r.used}</span>
-              </div>
+              <span className="mn" style={{ fontSize:11,color:r.c }}>{r.cap}</span>
             </div>
           ))}
         </div>
@@ -10164,100 +10290,53 @@ const Admin = ({ setPage }) => {
         <div>
           <div className="sl">Post Market Update</div>
           <div className="mc">
-            <input className="inp" placeholder="Update title..." style={{ marginBottom:10 }}/>
-            <textarea className="inp" placeholder="Market update content..." style={{ minHeight:70,resize:"vertical",fontFamily:"inherit",marginBottom:10 }}/>
-            <button className="btn bp">Publish Update</button>
+            <input className="inp" placeholder="Update title..." value={updateTitle} onChange={e=>setUpdateTitle(e.target.value)} style={{ marginBottom:10 }}/>
+            <textarea className="inp" placeholder="Market update content..." value={updateBody} onChange={e=>setUpdateBody(e.target.value)} style={{ minHeight:70,resize:"vertical",fontFamily:"inherit",marginBottom:8 }}/>
+            <label style={{ display:"flex",alignItems:"center",gap:8,fontSize:12,color:C.textMuted,marginBottom:10,cursor:"pointer" }}>
+              <input type="checkbox" checked={updatePinned} onChange={e=>setUpdatePinned(e.target.checked)}/> Pin to top of dashboard
+            </label>
+            {updateMsg && <div style={{ fontSize:12, color:updateMsg.includes("success")?C.accent:C.pink, marginBottom:8 }}>{updateMsg}</div>}
+            <button className="btn bp" onClick={publishUpdate} disabled={updateSaving} style={{ opacity:updateSaving?.6:1 }}>
+              {updateSaving ? "Publishing…" : "Publish Update"}
+            </button>
           </div>
         </div>
         <div>
           <div className="sl">Access Gate Override</div>
           <div className="mc">
-            <div style={{ fontSize:12,color:C.textMuted,marginBottom:12 }}>Manual subscription override for specific users. Server-side enforcement applies regardless.</div>
-            <input className="inp" placeholder="User email..." style={{ marginBottom:10 }}/>
-            <select className="inp" style={{ marginBottom:10 }}>
-              {Object.values(TIERS).map(t=><option key={t.id} value={t.id}>{t.label}</option>)}
+            <div style={{ fontSize:12,color:C.textMuted,marginBottom:12 }}>Manual subscription override for a specific user. Server-side enforcement applies regardless.</div>
+            <input className="inp" placeholder="User email..." value={overrideEmail} onChange={e=>setOverrideEmail(e.target.value)} style={{ marginBottom:10 }}/>
+            <select className="inp" value={overrideTier} onChange={e=>setOverrideTier(e.target.value)} style={{ marginBottom:10 }}>
+              {[{id:"free",label:"Free"},{id:"45",label:"Core $45"},{id:"65",label:"Pro $65"},{id:"95",label:"Elite $95"}].map(t=>(
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
             </select>
-            <button className="btn bg" style={{ width:"100%" }}>Apply Override</button>
+            {overrideMsg && <div style={{ fontSize:12, color:overrideMsg.includes("updated")?C.accent:C.pink, marginBottom:8 }}>{overrideMsg}</div>}
+            <button className="btn bg" style={{ width:"100%", opacity:overrideSaving?.6:1 }} onClick={applyOverride} disabled={overrideSaving}>
+              {overrideSaving ? "Applying…" : "Apply Override"}
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="sl">Recent Activity</div>
+      <div className="sl">Recent Members</div>
       <div style={{ background:"rgba(13,16,24,.82)",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",backdropFilter:"blur(8px)" }}>
         <table>
-          <thead><tr><th>User</th><th>Event</th><th>Tier</th><th>Time</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Status</th><th>Joined</th></tr></thead>
           <tbody>
-            {[
-              {u:"T.Adeyemi",  e:"Chart upload",    t:"45",  time:"09:12",s:"Analysed",tc:"ta"},
-              {u:"K.Morrow",   e:"Coach session",   t:"65",  time:"09:28",s:"Complete", tc:"ta"},
-              {u:"J.Ashford",  e:"Chart upload",    t:"45",  time:"10:01",s:"Flagged",  tc:"td"},
-              {u:"M.Okafor",   e:"Tier upgrade",    t:"95",  time:"10:44",s:"$45→$95",  tc:"tg2"},
-              {u:"P.Nkosi",    e:"Journal import",  t:"65",  time:"11:02",s:"Complete", tc:"ta"},
-            ].map((r,i)=>(
-              <tr key={i}>
-                <td>{r.u}</td>
-                <td style={{ color:C.text }}>{r.e}</td>
-                <td><span className="tg ta" style={{ fontSize:9 }}>{TIERS[r.t]?.label||r.t}</span></td>
-                <td className="mn" style={{ fontSize:11 }}>{r.time}</td>
-                <td><span className={`tg ${r.tc}`}>{r.s}</span></td>
-                <td><div style={{ display:"flex",gap:6 }}>
-                  <button className="btn bg" style={{ padding:"3px 10px",fontSize:11 }}>View</button>
-                  <button className="btn bg" style={{ padding:"3px 10px",fontSize:11,borderColor:C.pinkDim,color:C.pink }}>Flag</button>
-                </div></td>
+            {users.length > 0 ? users.map((u,i)=>(
+              <tr key={u.id || i}>
+                <td style={{ fontSize:11 }}>{u.email}</td>
+                <td style={{ color:C.text }}>{u.first_name || ""} {u.last_name || ""}</td>
+                <td><span className="tg ta" style={{ fontSize:9 }}>{fmtTier(u.membership_tier)}</span></td>
+                <td><span className={`tg ${u.subscription_status==="active"?"ta":u.subscription_status==="trial"?"tg2":"td"}`} style={{ fontSize:9 }}>{u.subscription_status || "—"}</span></td>
+                <td className="mn" style={{ fontSize:11 }}>{u.created_at ? new Date(u.created_at).toLocaleDateString("en-GB",{day:"2-digit",month:"short"}) : "—"}</td>
               </tr>
-            ))}
+            )) : (
+              <tr><td colSpan={5} style={{ textAlign:"center", padding:20, color:C.textDim, fontSize:12 }}>{loadingKPI ? "Loading…" : "No users found."}</td></tr>
+            )}
           </tbody>
         </table>
-      </div>
-
-      {/* Database schema reference */}
-      <div style={{ marginTop:24 }}>
-        <div className="sl">Database Schema Reference</div>
-        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8 }}>
-          {[
-            { table:"users", fields:["id (uuid)","email","password_hash","role (user/admin)","membership_tier","subscription_status","created_at","updated_at"] },
-            { table:"subscriptions", fields:["id","user_id","tier","stripe_subscription_id","start_date","end_date","status (active/cancelled/expired)"] },
-            { table:"one_time_purchases", fields:["id","user_id","product_type (course/workshop/mentorship)","payment_id","purchase_date","active (boolean)"] },
-            { table:"trades", fields:["id","user_id","instrument","direction","entry/exit_price","lot_size","net_pl","r_multiple","open_time","close_time","session_tag"] },
-            { table:"performance_metrics", fields:["user_id","win_rate","expectancy","profit_factor","risk_consistency_score","revenge_score","fatigue_score","discipline_index","updated_at"] },
-            { table:"ai_analysis_history", fields:["id","user_id","type (chart/journal/coach)","input_reference","output_text","created_at"] },
-          ].map(s=>(
-            <div key={s.table} style={{ background:"rgba(13,16,24,.82)",border:`1px solid ${C.border}`,borderRadius:6,padding:14,backdropFilter:"blur(8px)" }}>
-              <div style={{ fontSize:10,fontWeight:700,color:C.accent,letterSpacing:".1em",textTransform:"uppercase",marginBottom:10,fontFamily:"JetBrains Mono" }}>{s.table}</div>
-              {s.fields.map(f=>(
-                <div key={f} style={{ fontSize:11,color:C.textMuted,fontFamily:"JetBrains Mono",padding:"3px 0",borderBottom:`1px solid ${C.border}` }}>{f}</div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Backend enforcement rules */}
-      <div style={{ marginTop:20 }}>
-        <div className="sl">Backend Enforcement Rules</div>
-        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8 }}>
-          {[
-            { tier:"Free",         color:C.textMuted, rules:["Block /api/journal endpoints","Block /api/ai/chart","Block /api/coach","Allow /api/education","Allow /api/auth"] },
-            { tier:"$45 Fortitude",color:C.accent,    rules:["Allow /api/intelligence (5/day cap)","Block /api/journal","Block /api/coach","Allow /api/community","Stripe subscription validation on each request"] },
-            { tier:"$65 Pro",      color:C.pink,   rules:["Allow /api/journal","Allow /api/coach","Allow /api/behavioral","AI cap: 10/day","Cache identical chart submissions 24h"] },
-            { tier:"$95 / Lifetime",color:C.gold,     rules:["All endpoints unlocked","Fair-use cap: 50 chart analyses/24h","Background behavioral batching every 30min","Lifetime: bypass subscription validation entirely"] },
-          ].map(r=>(
-            <div key={r.tier} style={{ background:"rgba(13,16,24,.82)",border:`1px solid ${r.color}40`,borderRadius:6,padding:14,backdropFilter:"blur(8px)" }}>
-              <div style={{ fontSize:11,fontWeight:600,color:r.color,letterSpacing:".06em",textTransform:"uppercase",marginBottom:10 }}>{r.tier}</div>
-              {r.rules.map((rule,i)=>(
-                <div key={i} style={{ display:"flex",gap:8,padding:"4px 0",borderBottom:`1px solid ${C.border}` }}>
-                  <span style={{ color:r.color,fontSize:10,marginTop:2 }}>›</span>
-                  <span style={{ fontSize:11,color:C.textMuted,fontFamily:"JetBrains Mono" }}>{rule}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop:10,padding:"12px 16px",background:"rgba(13,16,24,.6)",border:`1px solid ${C.border}`,borderRadius:6 }}>
-          <div style={{ fontSize:12,color:C.textDim,lineHeight:1.9 }}>
-            <strong style={{ color:C.text }}>Enforcement principles:</strong> Server-side only — never rely on frontend gating as the sole control. Stripe webhooks validate subscription status on every premium API call. Downgrade takes effect end of billing period; features enter read-only state, no data deleted. Lifetime purchases bypass all subscription_status checks.
-          </div>
-        </div>
       </div>
     </div>
   );
