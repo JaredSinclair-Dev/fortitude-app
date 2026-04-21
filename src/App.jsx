@@ -916,27 +916,7 @@ function getSession(timeStr) {
 })();
 
 
-// Simulated trade dataset (in production: from journal CSV/API)
-const TRADE_DATA = [
-  { id:1,  instrument:"EURUSD", type:"Long",  r:1.0, result:"+2.1", win:true,  time:"2026-02-10T09:14:00", size:1.0, session:"London" },
-  { id:2,  instrument:"XAUUSD", type:"Short", r:1.0, result:"-1.0", win:false, time:"2026-02-10T11:30:00", size:1.0, session:"London" },
-  { id:3,  instrument:"XAUUSD", type:"Long",  r:1.8, result:"-1.0", win:false, time:"2026-02-10T11:58:00", size:1.8, session:"London" },  // size spike after loss + rapid reentry
-  { id:4,  instrument:"NAS100", type:"Long",  r:1.0, result:"+1.8", win:true,  time:"2026-02-11T14:20:00", size:1.0, session:"NY" },
-  { id:5,  instrument:"BTCUSD", type:"Short", r:1.0, result:"+2.6", win:true,  time:"2026-02-12T08:45:00", size:1.0, session:"London" },
-  { id:6,  instrument:"EURUSD", type:"Short", r:1.2, result:"-1.0", win:false, time:"2026-02-13T16:10:00", size:1.2, session:"NY" },
-  { id:7,  instrument:"EURUSD", type:"Long",  r:2.1, result:"-1.0", win:false, time:"2026-02-13T16:38:00", size:2.1, session:"NY" },  // size spike + same instrument reentry
-  { id:8,  instrument:"EURUSD", type:"Short", r:1.9, result:"-1.0", win:false, time:"2026-02-13T17:02:00", size:1.9, session:"NY" },  // 3rd loss cluster
-  { id:9,  instrument:"XAUUSD", type:"Long",  r:1.0, result:"+1.4", win:true,  time:"2026-02-14T09:00:00", size:1.0, session:"London" },
-  { id:10, instrument:"NAS100", type:"Short", r:1.0, result:"+0.9", win:true,  time:"2026-02-17T10:15:00", size:1.0, session:"London" },
-  { id:11, instrument:"BTCUSD", type:"Long",  r:0.8, result:"+1.1", win:true,  time:"2026-02-18T13:40:00", size:0.8, session:"NY" },
-  { id:12, instrument:"EURUSD", type:"Short", r:1.0, result:"-1.0", win:false, time:"2026-02-19T19:22:00", size:1.0, session:"Late" }, // late session
-  { id:13, instrument:"XAUUSD", type:"Long",  r:1.0, result:"+2.1", win:true,  time:"2026-02-20T08:55:00", size:1.0, session:"London" },
-  { id:14, instrument:"NAS100", type:"Long",  r:1.0, result:"-1.0", win:false, time:"2026-02-21T10:10:00", size:1.0, session:"London" },
-  { id:15, instrument:"EURUSD", type:"Short", r:1.0, result:"-1.0", win:false, time:"2026-02-21T10:44:00", size:1.0, session:"London" },
-  { id:16, instrument:"BTCUSD", type:"Long",  r:1.6, result:"-1.0", win:false, time:"2026-02-21T11:05:00", size:1.6, session:"London" }, // post-loss size escalation
-  { id:17, instrument:"XAUUSD", type:"Short", r:1.0, result:"+1.8", win:true,  time:"2026-02-22T09:30:00", size:1.0, session:"London" },
-  { id:18, instrument:"EURUSD", type:"Long",  r:1.0, result:"+0.8", win:true,  time:"2026-02-23T08:20:00", size:1.0, session:"London" },
-];
+const TRADE_DATA = [];
 
 // ── PART 1: Revenge Trading Detection ────────────────────────────────────────
 function computeRevengeScore(trades) {
@@ -1246,55 +1226,9 @@ function computeFatigueIndex(trades) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // GLOBAL MARKET PULSE — Interactive World Map + Sessions + Intelligence
 // ═══════════════════════════════════════════════════════════════════════════════
-const MOCK_CONNECTIONS = [
-  {
-    id: "conn-1",
-    broker_type: "mt5",
-    display_name: "IC Markets MT5 — Live",
-    account_number: "4182****",
-    broker_server: "ICMarkets-Live01",
-    sync_status: "live",
-    metaapi_state: "CONNECTED",
-    last_synced_at: new Date(Date.now() - 4 * 60000).toISOString(),
-    stats: { total_trades: 147, wins: 84, net_pnl: 4820.50, first_trade: "2025-11-01" },
-  },
-  {
-    id: "conn-2",
-    broker_type: "ctrader",
-    display_name: "Pepperstone cTrader — Prop",
-    account_number: "8841****",
-    broker_server: "Pepperstone-Live",
-    sync_status: "live",
-    metaapi_state: "CONNECTED",
-    last_synced_at: new Date(Date.now() - 12 * 60000).toISOString(),
-    stats: { total_trades: 63, wins: 38, net_pnl: 1240.00, first_trade: "2026-01-10" },
-  },
-  {
-    id: "conn-3",
-    broker_type: "tradovate",
-    display_name: "Tradovate — Demo",
-    account_number: "2209****",
-    broker_server: "Tradovate-Demo",
-    sync_status: "idle",
-    metaapi_state: "DISCONNECTED",
-    last_synced_at: new Date(Date.now() - 3600 * 1000 * 6).toISOString(),
-    stats: { total_trades: 22, wins: 11, net_pnl: -180.00, first_trade: "2026-02-01" },
-  },
-];
+const MOCK_CONNECTIONS = [];
 
-// Simulated synced trades (in production: from GET /broker/trades)
-const MOCK_SYNCED_TRADES = [
-  { id:1,  instrument:"EURUSD", trade_type:"Long",  volume:1.0, open_price:1.08240, close_price:1.08840, open_time:"2026-02-22T09:14:00Z", close_time:"2026-02-22T11:42:00Z", profit:420,   commission:-3.5, session:"London",   is_open:false },
-  { id:2,  instrument:"XAUUSD", trade_type:"Short", volume:0.5, open_price:2031.50, close_price:2018.20, open_time:"2026-02-22T13:30:00Z", close_time:"2026-02-22T15:10:00Z", profit:665,   commission:-2.8, session:"London",   is_open:false },
-  { id:3,  instrument:"NAS100", trade_type:"Long",  volume:0.2, open_price:17840,   close_price:17760,   open_time:"2026-02-21T14:20:00Z", close_time:"2026-02-21T16:05:00Z", profit:-160,  commission:-1.5, session:"NY",       is_open:false },
-  { id:4,  instrument:"BTCUSD", trade_type:"Short", volume:0.1, open_price:52400,   close_price:51100,   open_time:"2026-02-21T08:45:00Z", close_time:"2026-02-21T10:22:00Z", profit:1300,  commission:-4.2, session:"London",   is_open:false },
-  { id:5,  instrument:"GBPUSD", trade_type:"Long",  volume:1.0, open_price:1.26540, close_price:1.27100, open_time:"2026-02-20T09:00:00Z", close_time:"2026-02-20T10:35:00Z", profit:560,   commission:-3.5, session:"London",   is_open:false },
-  { id:6,  instrument:"EURUSD", trade_type:"Short", volume:0.8, open_price:1.08890, close_price:1.08630, open_time:"2026-02-19T10:15:00Z", close_time:"2026-02-19T11:48:00Z", profit:208,   commission:-2.8, session:"London",   is_open:false },
-  { id:7,  instrument:"XAUUSD", trade_type:"Short", volume:0.4, open_price:2044.80, close_price:2029.50, open_time:"2026-02-19T14:00:00Z", close_time:"2026-02-19T15:30:00Z", profit:612,   commission:-2.2, session:"NY",       is_open:false },
-  { id:8,  instrument:"EURUSD", trade_type:"Long",  volume:1.2, open_price:1.07920, close_price:1.07650, open_time:"2026-02-18T09:10:00Z", close_time:"2026-02-18T10:55:00Z", profit:-324,  commission:-4.2, session:"London",   is_open:false },
-  { id:9,  instrument:"GBPUSD", trade_type:"Short", volume:0.5, open_price:1.27280, close_price:1.26950, open_time:"2026-02-18T13:40:00Z", close_time:"2026-02-18T15:20:00Z", profit:165,   commission:-1.8, session:"NY",       is_open:false },
-  { id:10, instrument:"XAUUSD", trade_type:"Long",  volume:0.3, open_price:2019.00, close_price:2019.00, open_time:"2026-03-09T01:20:00Z", close_time:null,                   profit:120,   commission:-1.8, session:"Asia",     is_open:true  },
-];
+const MOCK_SYNCED_TRADES = [];
 
 // Key macro events shown on the Global Market Pulse map
 const MAP_EVENTS = [
@@ -1866,24 +1800,44 @@ const LivePriceTicker = () => {
 
 
 const AIInsightFeed = () => {
-  const INSIGHTS = [
-    "USD strength building — Fed minutes signal higher for longer, DXY approaching key resistance at 104.20",
-    "Gold likely to see expansion during NY session — risk-off regime dominant, watch for liquidity sweep below 2,290",
-    "Red Sea disruptions adding 3–5% risk premium to Brent crude — watch for ECB commentary on inflation impact",
-    "JPY carry trade unwind risk elevated — BOJ normalisation signal, USD/JPY watching 148.00 as critical level",
-    "LDN–NY overlap active — highest liquidity window globally, XAUUSD institutional flow likely",
-    "IMF downgrade reinforces recession risk narrative — emerging market currencies under pressure",
-    "CPI miss last print shifted Fed expectations dovish — monitor PCE data for confirmation",
-  ];
+  const [insights, setInsights] = useState(["Loading market intelligence..."]);
   const [idx, setIdx] = useState(0);
   const [fade, setFade] = useState(true);
+
   useEffect(() => {
+    fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 400,
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        messages: [{
+          role: "user",
+          content: "Search for today's top 5 macro market insights for forex/commodities traders. Return ONLY a JSON array of 5 short strings (under 15 words each), each describing one current market observation. Example format: [\"USD strength building as Fed maintains hawkish stance\", ...]"
+        }]
+      })
+    })
+    .then(r => r.json())
+    .then(data => {
+      const text = data.content?.find(b => b.type === "text")?.text || "";
+      const match = text.match(/\[[\s\S]*?\]/);
+      if (match) {
+        const parsed = JSON.parse(match[0]);
+        if (Array.isArray(parsed) && parsed.length > 0) setInsights(parsed);
+      }
+    })
+    .catch(() => setInsights(["Market intelligence unavailable — check your connection"]));
+  }, []);
+
+  useEffect(() => {
+    if (insights.length <= 1) return;
     const t = setInterval(() => {
       setFade(false);
-      setTimeout(() => { setIdx(i => (i+1) % INSIGHTS.length); setFade(true); }, 400);
+      setTimeout(() => { setIdx(i => (i+1) % insights.length); setFade(true); }, 400);
     }, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [insights]);
   return (
     <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", background:"rgba(41,168,255,.04)", border:"1px solid rgba(41,168,255,.12)", borderRadius:8 }}>
       <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
@@ -1892,7 +1846,7 @@ const AIInsightFeed = () => {
       </div>
       <div style={{ width:1, height:14, background:"rgba(255,255,255,.1)", flexShrink:0 }}/>
       <div style={{ fontSize:12, color:C.textMuted, lineHeight:1.4, flex:1, transition:"opacity .4s", opacity:fade?1:0 }}>
-        {INSIGHTS[idx]}
+        {insights[idx]}
       </div>
     </div>
   );
@@ -1902,14 +1856,20 @@ const AIInsightFeed = () => {
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
 const Dashboard = ({ setPage, currentTier, user }) => {
-  const eq = [100,98,102,107,105,110,108,115,112,118,116,122,120,125,128,124,130,135,132,138];
   const revenge    = computeRevengeScore(TRADE_DATA);
   const riskCons   = computeRiskConsistency(TRADE_DATA);
   const overtrading= computeOvertradingScore(TRADE_DATA);
-  const equity     = computeEquityStability([100,97,99,103,101,105,102,108,106,111,109,114,112,117,115,120,118,123,121,126,130]);
+  const equity     = computeEquityStability([]);
   const pdi        = computePDI(riskCons.score, revenge.score, overtrading.score, equity.score);
   const pdiMeta    = pdiLabel(pdi);
   const [dashMode, setDashMode] = useState("trader");
+  const [latestUpdate, setLatestUpdate] = useState(null);
+
+  useEffect(() => {
+    api.get('/market-updates?limit=1')
+      .then(d => { if (d?.data?.[0]) setLatestUpdate(d.data[0]); })
+      .catch(() => {});
+  }, []);
 
   const [userClock, setUserClock] = useState({ city:null, tz:null, loading:true });
   const [clockNow,  setClockNow]  = useState(new Date());
@@ -2093,54 +2053,24 @@ const Dashboard = ({ setPage, currentTier, user }) => {
             </div>
           </div>
 
-          <div className="analyses-grid" style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12 }}>
-            <div className="mc">
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-                <IC n="intel" s={13} c={C.accent}/>
-                <div className="sl" style={{ margin:0 }}>Recent Analyses</div>
-              </div>
-              {[{a:"EURUSD",tf:"H4",d:"22 Feb",t:"Bearish",tc:"td"},{a:"BTCUSD",tf:"D1",d:"21 Feb",t:"Transitional",tc:"tg2"},{a:"US500",tf:"H1",d:"20 Feb",t:"Bullish",tc:"ta"},{a:"XAUUSD",tf:"H4",d:"19 Feb",t:"Range-bound",tc:"tg2"}].map((r,i)=>(
-                <div key={i} style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:i<3?`1px solid ${C.border}`:"none" }}>
-                  <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                    <span className="mn" style={{ color:C.accent,fontSize:13,width:64 }}>{r.a}</span>
-                    <span className="tg ta">{r.tf}</span>
+          {latestUpdate && (
+            <div className="mc" style={{ borderLeft:`3px solid ${C.accent}` }}>
+              <div style={{ display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"flex-start",gap:8,marginBottom:10 }}>
+                <div>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                    <IC n="news" s={13} c={C.accent}/>
+                    <div className="sl" style={{ margin:0 }}>Latest Market Update</div>
                   </div>
-                  <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                    <span className={`tg ${r.tc}`}>{r.t}</span>
-                    <span style={{ fontSize:11,color:C.textDim }}>{r.d}</span>
-                  </div>
+                  <div style={{ fontSize:16,color:C.text,fontWeight:600,fontFamily:"Inter,sans-serif",letterSpacing:".01em" }}>{latestUpdate.title}</div>
                 </div>
-              ))}
-            </div>
-            <div className="mc">
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-                <IC n="activity" s={13} c={C.accent}/>
-                <div className="sl" style={{ margin:0 }}>Platform Activity</div>
-              </div>
-              <EqChart data={eq}/>
-              <div style={{ display:"flex",justifyContent:"space-between",marginTop:10 }}>
-                <span style={{ fontSize:11,color:C.textDim }}>Analyses over 20 days</span>
-                <span style={{ fontSize:11,color:C.accent }}>+38% activity</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mc" style={{ borderLeft:`3px solid ${C.accent}` }}>
-            <div style={{ display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"flex-start",gap:8,marginBottom:10 }}>
-              <div>
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-                  <IC n="news" s={13} c={C.accent}/>
-                  <div className="sl" style={{ margin:0 }}>Latest Market Update</div>
+                <div style={{ display:"flex",gap:8 }}>
+                  <span className="tg ta">Admin</span>
+                  <span style={{ fontSize:11,color:C.textDim,lineHeight:2.2 }}>{new Date(latestUpdate.created_at).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}</span>
                 </div>
-                <div style={{ fontSize:16,color:C.text,fontWeight:600,fontFamily:"Inter,sans-serif",letterSpacing:".01em" }}>DXY Compression Phase — Structural Context</div>
               </div>
-              <div style={{ display:"flex",gap:8 }}>
-                <span className="tg ta">Admin</span>
-                <span style={{ fontSize:11,color:C.textDim,lineHeight:2.2 }}>23 Feb 2026</span>
-              </div>
+              <p style={{ color:C.textMuted,lineHeight:1.8,fontSize:13 }}>{latestUpdate.body}</p>
             </div>
-            <p style={{ color:C.textMuted,lineHeight:1.8,fontSize:13 }}>DXY continues to exhibit compression between 103.40 and 104.20. Structural bias remains indeterminate until a confirmed break with sufficient momentum. Watch for liquidity sweep below 103.40 as a potential institutional positioning mechanism.</p>
-          </div>
+          )}
 
           <TVNewsWidget/>
         </div>
@@ -3353,38 +3283,14 @@ const CognitiveIntelligence = ({ setPage }) => {
 };
 
 
-const ATR_DATA = {
-  baseline30d: 0.00820,  // 30-day avg ATR (EURUSD representative)
-  current: 0.01180,       // current ATR
-  instrument: "EURUSD",
-};
+const ATR_DATA = { baseline30d: 0, current: 0, instrument: "N/A" };
 
 
-const BehavioralTimeline = () => {
-  const events = [
-    { date:"10 Feb", label:"Risk spike",       color:C.pink },
-    { date:"12 Feb", label:"Discipline break", color:C.pink },
-    { date:"14 Feb", label:"Stabilised",       color:C.accent },
-    { date:"17 Feb", label:"Weekly review",    color:C.gold },
-    { date:"19 Feb", label:"Consistent",       color:C.accent },
-    { date:"21 Feb", label:"Post-loss debrief",color:C.pink },
-    { date:"23 Feb", label:"Stable",           color:C.accent },
-  ];
-  return (
-    <div style={{ position:"relative",padding:"18px 0 6px" }}>
-      <div style={{ position:"absolute",top:32,left:"7%",right:"7%",height:1,background:C.border }}/>
-      <div style={{ display:"flex",justifyContent:"space-between" }}>
-        {events.map((e,i)=>(
-          <div key={i} style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:7,flex:1 }}>
-            <div style={{ fontSize:9,color:C.textDim,letterSpacing:".05em",whiteSpace:"nowrap" }}>{e.date}</div>
-            <div style={{ width:10,height:10,borderRadius:"50%",background:e.color,boxShadow:`0 0 8px ${e.color}70`,border:`2px solid ${e.color}`,zIndex:1 }}/>
-            <div style={{ fontSize:9,color:e.color,textAlign:"center",lineHeight:1.3 }}>{e.label}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+const BehavioralTimeline = () => (
+  <div style={{ padding:"18px 0 6px", textAlign:"center", color:C.textDim, fontSize:11 }}>
+    Log trades to build your behavioral timeline.
+  </div>
+);
 
 
 const BrokerLogo = ({ broker, size = 36 }) => {
@@ -3689,18 +3595,7 @@ const ConnectionCard = ({ conn, onSelect, onDisconnect, selected }) => {
 };
 
 
-const INIT_SESSIONS = [
-  { id: 1, mode: "post-loss", date: "21 Feb 2026", title: "Post-Loss Debrief", preview: "Three consecutive losses reviewed. Risk sizing consistent in two of three cases.", msgs: [
-    { r:"a", t:"You logged three consecutive losses over the past 48 hours. Before we proceed, I want to understand the structural context of each trade. Were your invalidation levels defined before entry in all three cases?" },
-    { r:"u", t:"Yes for the first two. The third I entered without a clear level — I was trying to recover." },
-    { r:"a", t:"That is a notable distinction. The first two losses are structurally acceptable. The third trade represents a behavioral deviation. You recognised the absence of a clear level and entered anyway. What was the internal reasoning?" },
-    { r:"u", t:"I felt like I needed to get the money back." },
-    { r:"a", t:"That is the pattern we need to address. The impulse to recover losses through additional exposure is a risk amplification mechanism, not a recovery strategy. After two consecutive losses, your protocol should include a defined pause period before any further entries. Not as punishment — as structural protection." },
-  ]},
-  { id: 2, mode: "weekly", date: "17 Feb 2026", title: "Weekly Performance Review", preview: "W/C 10 Feb reviewed. Expectancy positive. Late-session flag noted.", msgs: [
-    { r:"a", t:"Weekly review — week commencing 10 February. Your expectancy held at +0.29R across 8 trades. Risk sizing was consistent in 7 of 8 cases. One outlier: a position at 19:40 UTC with 1.4x standard risk. That is the second week this pattern has appeared. What is driving activity after 18:00?" },
-  ]},
-];
+const INIT_SESSIONS = [];
 
 
 const MODES = {
@@ -3894,7 +3789,9 @@ const Coach = () => {
 // Simulated trade dataset (in production: from journal CSV/API)
 // ── PART 1: Revenge Trading Detection ────────────────────────────────────────
 function computeVolatilityAlignment(atrData, avgRiskSize) {
-  const expansion = (atrData.current - atrData.baseline30d) / atrData.baseline30d;
+  const expansion = atrData.baseline30d > 0
+    ? (atrData.current - atrData.baseline30d) / atrData.baseline30d
+    : 0;
   const misaligned = expansion > 0.40;
   const expansionPct = (expansion * 100).toFixed(0);
   return {
@@ -4338,14 +4235,7 @@ const EconomicCalendar = () => {
 };
 
 const COMMUNITY_SEED = [
-  { id:1,  u:"Admin",     tag:"Admin",  tc:"td",  avatar:"A", time:"08:00", text:"Good morning. Market structure discussion is open. Keep contributions analytical and framework-based.", reactions:[{e:"👍",n:4}] },
-  { id:2,  u:"T.Adeyemi", tag:"FMF",   tc:"tg2", avatar:"T", time:"09:14", text:"DXY structure looks compressive ahead of the NY session. Equal lows sitting below 103.40 — watching for a liquidity sweep before any directional commitment.", reactions:[{e:"🔥",n:3},{e:"👍",n:2}] },
-  { id:3,  u:"K.Morrow",  tag:"Member",tc:"tb",  avatar:"K", time:"09:28", text:"Structural bias on EURUSD H4 shifted bearish after the break of the most recent lower high. Risk defined accordingly.", reactions:[{e:"👍",n:5}] },
-  { id:4,  u:"J.Ashford", tag:"FMF",   tc:"tg2", avatar:"J", time:"09:41", text:"XAUUSD showing classic inducement behavior above 2040. No structural confirmation yet. Monitoring, not positioned.", reactions:[{e:"🧠",n:6},{e:"👍",n:1}] },
-  { id:5,  u:"Admin",     tag:"Admin", tc:"td",  avatar:"A", time:"09:55", text:"Reminder: Chart analysis discussions are structural only. Specific entry prices and signals are not permitted per community guidelines.", reactions:[] },
-  { id:6,  u:"P.Nkosi",   tag:"Member",tc:"tb",  avatar:"P", time:"10:07", text:"In a compression range, does liquidity engineering at both ends indicate accumulation or distribution? Looking for framework perspective.", reactions:[{e:"🤔",n:4},{e:"👍",n:2}] },
-  { id:7,  u:"T.Adeyemi", tag:"FMF",   tc:"tg2", avatar:"T", time:"10:22", text:"@P.Nkosi Context dependent. Engineering at both sides typically precedes a directional expansion. The side that breaks last tends to be the engineered sweep — the true direction is opposite.", reactions:[{e:"🔥",n:8},{e:"🧠",n:5}] },
-  { id:8,  u:"S.Okafor",  tag:"Member",tc:"tb",  avatar:"S", time:"10:45", text:"GBPUSD: higher timeframe bearish order block holding as resistance. Aligns with current DXY compression thesis.", reactions:[{e:"👍",n:3}] },
+  { id:1, u:"Admin", tag:"Admin", tc:"td", avatar:"A", time:"00:00", text:"Welcome to the Fortitude community. Keep all discussions analytical and framework-based.", reactions:[] },
 ];
 
 const AVATAR_COLORS = ["#29a8ff","#e91ea7","#c8a96e","#7c6aff","#3ecf8e","#ff6b6b"];
@@ -7237,7 +7127,7 @@ const Community = () => {
     }));
   };
 
-  const ONLINE = [{u:"T.Adeyemi",t:"FMF",tc:"tg2"},{u:"J.Ashford",t:"FMF",tc:"tg2"},{u:"K.Morrow",t:"Member",tc:"tb"},{u:"S.Okafor",t:"Member",tc:"tb"},{u:"Admin",t:"Admin",tc:"td"}];
+  const ONLINE = [];
   const QUICK_REACTIONS = ["👍","🔥","🧠","🤔","💯"];
 
   return (
@@ -8766,7 +8656,7 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
                   {l:"Status",      v:subStatus==="active"?"Active":"Suspended", c:subStatus==="active"?C.accent:C.gold},
                   {l:"Billing",     v:tier.billing||"One-time",                   c:C.text},
                   {l:"AI Analyses", v:AI_CAPS[currentTier]>=999?"Unlimited":`${AI_CAPS[currentTier]}/day`, c:C.accent},
-                  {l:"Next billing",v:"23 Mar 2026", c:C.textMuted},
+                  {l:"Next billing",v:"Managed via Stripe", c:C.textMuted},
                 ].map(r=>(
                   <div key={r.l} style={{ display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${C.border}` }}>
                     <span style={{ fontSize:12,color:C.textMuted }}>{r.l}</span>
@@ -9406,103 +9296,11 @@ const AffiliateLanding = ({ currentTier, setPage }) => {
 // QUANT RESEARCH ANALYST — Elite Only
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SAMPLE_EVENTS = [
-  {
-    id:"qra-001", headline:"Fed Minutes Signal Rates Stay Higher for Longer",
-    sources:["Federal Reserve","Reuters","Bloomberg"], timestamp:"2026-03-21T08:14:00Z",
-    category:"Monetary Policy", region:"United States", status:"Confirmed",
-    impactScore:9, confidence:"High", urgency:"High", regime:"Deflationary",
-    summary:"Fed members see no rate cuts until Q3 2026. Inflation still sticky above 2% target.",
-    whatHappened:"The Federal Reserve released minutes from its most recent FOMC meeting, revealing the majority of members see no rate cuts until at least Q3 2026. One member advocated for an additional hike if data warrants.",
-    whyItMatters:"Markets had priced in two rate cuts by mid-2026. This reprices the entire yield curve, strengthening USD and pressuring gold and rate-sensitive assets.",
-    immediateImpact:"USD spiked 0.7% on DXY. 2-year Treasury yield rose 14 basis points. Gold fell $28 in 30 minutes.",
-    secondaryEffects:"Emerging market currencies under pressure. Equity indices face headwind from higher discount rates.",
-    watchNext:"CPI print April 10. Fed member speeches this week. PCE data end of month.",
-    invalidation:"A materially weak NFP or CPI miss would immediately re-price rate expectations dovish.",
-    assets:{ XAU:-1, DXY:1, OIL:0, SPX:-1, BONDS:-1, EURUSD:-1, BTCUSD:-1 },
-    narratives:["Hawkish Fed","Higher for Longer","USD Strength"],
-  },
-  {
-    id:"qra-002", headline:"Red Sea Tensions Disrupt Global Shipping — Oil Risk Premium Builds",
-    sources:["Reuters","AP","Financial Times"], timestamp:"2026-03-21T06:45:00Z",
-    category:"Geopolitical Conflict", region:"Middle East", status:"Developing",
-    impactScore:8, confidence:"High", urgency:"High", regime:"Risk-Off",
-    summary:"Major carriers suspend Red Sea transits. 12% of global trade rerouting around Africa.",
-    whatHappened:"Multiple shipping vessels rerouted from the Red Sea. Maersk and MSC announced indefinite suspensions, forcing rerouting around the Cape of Good Hope.",
-    whyItMatters:"The Red Sea carries 12% of global trade. Extended disruption increases shipping costs, delays supply chains, and creates inflationary pressure in Europe and Asia.",
-    immediateImpact:"Brent crude rose $3.40 (+3.8%). Gold spiked $45 on safe haven demand. European equities opened lower.",
-    secondaryEffects:"Inflationary pressure building in Europe — could complicate ECB rate cut timeline. Insurance premiums spiking.",
-    watchNext:"Military intervention signals. Shipping cost indices. ECB language on inflation impact.",
-    invalidation:"Rapid diplomatic resolution or military deterrence reopening shipping lanes unwinds risk premium within days.",
-    assets:{ XAU:1, DXY:1, OIL:1, SPX:-1, BONDS:1, EURUSD:-1, BTCUSD:-1 },
-    narratives:["Geopolitical Risk","Supply Shock","Safe Haven Flow"],
-  },
-  {
-    id:"qra-003", headline:"US CPI Undershoots — Disinflation Trend Confirmed",
-    sources:["Bureau of Labor Statistics","Bloomberg","WSJ"], timestamp:"2026-03-20T13:30:00Z",
-    category:"Inflation Data", region:"United States", status:"Confirmed",
-    impactScore:8, confidence:"High", urgency:"Medium", regime:"Risk-On",
-    summary:"CPI 2.8% vs 3.1% expected. Core CPI 3.2% vs 3.4%. Shelter and services both decelerated.",
-    whatHappened:"February CPI came in at 2.8% year-over-year versus consensus of 3.1%. Core CPI printed at 3.2% versus 3.4% expected.",
-    whyItMatters:"Clearest signal yet that disinflation is intact. Materially increases probability of rate cuts before year-end.",
-    immediateImpact:"Gold surged $52. DXY fell 0.6%. 2-year Treasury yields fell 18 basis points. S&P 500 futures +1.1%.",
-    secondaryEffects:"Fed funds futures now pricing 68% probability of June cut (vs 34% before). Emerging market currencies rallied.",
-    watchNext:"Fed Chair speech next Tuesday. PCE data in two weeks. NFP to assess whether labour market supports a cut.",
-    invalidation:"Reversal in core services inflation or hot PPI print would cast doubt on the disinflation trend.",
-    assets:{ XAU:1, DXY:-1, OIL:0, SPX:1, BONDS:1, EURUSD:1, BTCUSD:1 },
-    narratives:["Disinflation","Fed Pivot","Risk-On"],
-  },
-  {
-    id:"qra-004", headline:"IMF Cuts Global Growth Forecast — Flags Stagflation Risk",
-    sources:["IMF","Financial Times","Reuters"], timestamp:"2026-03-20T10:00:00Z",
-    category:"Economic Data", region:"Global", status:"Confirmed",
-    impactScore:7, confidence:"High", urgency:"Medium", regime:"Risk-Off",
-    summary:"Global GDP forecast cut from 3.1% to 2.7%. IMF flags stagflation risk for first time since 2022.",
-    whatHappened:"The IMF revised its 2026 global GDP growth forecast, citing persistent inflation, elevated rates, geopolitical fragmentation, and slowing trade.",
-    whyItMatters:"Stagflation risk is the most bearish scenario for equities and the most bullish for gold. An IMF downgrade signals structural weakness.",
-    immediateImpact:"Risk assets sold off globally. Bond yields fell on growth concern. Emerging market assets fell sharply.",
-    secondaryEffects:"Central banks in emerging markets face pressure to cut despite inflation risk. USD benefits short-term as global reserve.",
-    watchNext:"Central bank response statements. Commodity price trajectory. Global PMI data.",
-    invalidation:"Strong global PMI and trade data would undermine the downgrade narrative.",
-    assets:{ XAU:1, DXY:1, OIL:-1, SPX:-1, BONDS:1, EURUSD:-1, BTCUSD:-1 },
-    narratives:["Recession Risk","Stagflation","IMF Warning"],
-  },
-  {
-    id:"qra-005", headline:"Bank of Japan Signals Accelerated Policy Normalisation",
-    sources:["Bank of Japan","Bloomberg","Reuters"], timestamp:"2026-03-19T23:30:00Z",
-    category:"Monetary Policy", region:"Japan", status:"Confirmed",
-    impactScore:8, confidence:"Medium", urgency:"High", regime:"Risk-Off",
-    summary:"BOJ may accelerate rate hikes. Carry trade unwind risk elevated. USD/JPY fell 2.4%.",
-    whatHappened:"BOJ Governor Ueda signalled the Bank of Japan may accelerate its policy normalisation schedule, with a potential rate hike at the next meeting.",
-    whyItMatters:"The Japanese Yen carry trade is estimated at over $4 trillion. BOJ hikes narrow the rate differential, making carry trades less attractive. Unwinding is historically very disruptive.",
-    immediateImpact:"USD/JPY fell 2.4% — largest single-session move in over a year. Japanese equities fell 3.1%. ",
-    secondaryEffects:"Carry trade unwind risk elevated globally. Pressure on EM currencies funded by JPY. Japan is the largest foreign holder of US Treasuries.",
-    watchNext:"Next BOJ meeting date. USD/JPY price action below 148. Japanese wage data.",
-    invalidation:"Any BOJ backtracking or dovish reinterpretation would immediately reverse the JPY move.",
-    assets:{ XAU:0, DXY:-1, OIL:-1, SPX:-1, BONDS:0, EURUSD:1, BTCUSD:-1 },
-    narratives:["BOJ Pivot","Carry Trade Unwind","JPY Strength"],
-  },
-];
+const SAMPLE_EVENTS = [];
 
-const NARRATIVES = [
-  { id:"hawkish-fed",  label:"Hawkish Fed",           strength:85, trend:"Peaking",  color:"#e91ea7", icon:"bank",       desc:"Higher for longer. Rate cuts pushed to Q3+" },
-  { id:"geopolitical", label:"Geopolitical Risk",      strength:78, trend:"Building", color:"#ff6b35", icon:"geopolitical",desc:"Red Sea + multiple active conflict zones" },
-  { id:"disinflation", label:"Disinflation Trend",     strength:62, trend:"Building", color:"#29a8ff", icon:"trend_dn",   desc:"Global inflation falling, still above target" },
-  { id:"recession",    label:"Recession Risk",         strength:54, trend:"Building", color:"#d4af37", icon:"warning",    desc:"IMF downgrade + PMI weakness globally" },
-  { id:"carry-unwind", label:"Carry Trade Unwind",     strength:48, trend:"Building", color:"#e91ea7", icon:"trade",      desc:"BOJ normalisation threatening $4T carry trade" },
-  { id:"usd-strength", label:"USD Strength",           strength:72, trend:"Peaking",  color:"#29a8ff", icon:"dollar",     desc:"Hawkish Fed + safe haven demand" },
-];
+const NARRATIVES = [];
 
-const ASSET_DATA = [
-  { asset:"Gold",      sym:"XAU/USD", bias:1,  score:7, icon:"gold",    reason:"Safe haven + disinflation dominant",  change:"+1.2%" },
-  { asset:"US Dollar", sym:"DXY",     bias:1,  score:8, icon:"dollar",  reason:"Hawkish Fed + global risk-off",        change:"+0.7%" },
-  { asset:"Oil",       sym:"Brent",   bias:1,  score:6, icon:"oil",     reason:"Red Sea supply route risk",            change:"+3.8%" },
-  { asset:"S&P 500",   sym:"SPX",     bias:-1, score:6, icon:"indices", reason:"Higher rates + growth concerns",       change:"-0.9%" },
-  { asset:"10Y Bond",  sym:"US10Y",   bias:0,  score:4, icon:"bond",    reason:"Conflicting inflation vs growth",      change:"-4bp"  },
-  { asset:"EUR/USD",   sym:"EURUSD",  bias:-1, score:6, icon:"fx",      reason:"ECB dovish vs Fed hawkish gap",        change:"-0.6%" },
-  { asset:"USD/JPY",   sym:"USDJPY",  bias:-1, score:8, icon:"fx",      reason:"BOJ hawkish — carry unwind risk",      change:"-2.4%" },
-  { asset:"Bitcoin",   sym:"BTC/USD", bias:-1, score:5, icon:"crypto",  reason:"Risk-off environment + USD strength",  change:"-3.1%" },
-];
+const ASSET_DATA = [];
 
 const CAT_ICON_MAP = {
   "Monetary Policy":"bank", "Inflation Data":"inflation", "Economic Data":"gdp",
