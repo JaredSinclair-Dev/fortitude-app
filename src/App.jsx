@@ -2522,127 +2522,195 @@ const STATUS_META = {
 
 const Journal = ({ setPage, currentTier, user }) => {
   const token = localStorage.getItem("fis_token");
-  const [view,          setView]          = useState("dashboard");
-  const [selectedConn,  setSelectedConn]  = useState(MOCK_CONNECTIONS[0]?.id || null);
-  const [connections,   setConnections]   = useState(MOCK_CONNECTIONS);
-  const [showConnect,   setShowConnect]   = useState(false);
+
+  // ── State ───────────────────────────────────────────────────────────────
+  const [view,          setView]          = useState("overview");
+  const [trades,        setTrades]        = useState([]);
+  const [tradesLoading, setTradesLoading] = useState(false);
   const [calMonth,      setCalMonth]      = useState(() => { const d=new Date(); return {y:d.getFullYear(),m:d.getMonth()}; });
   const [selectedDay,   setSelectedDay]   = useState(null);
   const [filterInstr,   setFilterInstr]   = useState("All");
-  const [filterType,    setFilterType]    = useState("All");
+  const [filterDir,     setFilterDir]     = useState("All");
+  const [filterSession, setFilterSession] = useState("All");
+  const [filterResult,  setFilterResult]  = useState("All");
+  const [filterFrom,    setFilterFrom]    = useState("");
+  const [filterTo,      setFilterTo]      = useState("");
   const [sortField,     setSortField]     = useState("open_time");
   const [sortDir,       setSortDir]       = useState("desc");
+  const BLANK = { instrument:"", direction:"long", entry_price:"", exit_price:"", lot_size:"1", net_pl:"", commission:"0", stop_loss:"", take_profit:"", r_multiple:"", session_tag:"ny", timeframe:"15m", opened_at:"", closed_at:"", emotional_state:"", category:"", tags:"", thesis:"", notes:"", account_name:"" };
+  const [formOpen,      setFormOpen]      = useState(false);
+  const [formMode,      setFormMode]      = useState("add");
+  const [form,          setForm]          = useState(BLANK);
+  const [formSaving,    setFormSaving]    = useState(false);
+  const [formErr,       setFormErr]       = useState("");
+  const [editId,        setEditId]        = useState(null);
+  const [detailTrade,   setDetailTrade]   = useState(null);
+  const [deleteId,      setDeleteId]      = useState(null);
+  const [deleting,      setDeleting]      = useState(false);
   const [csvStep,       setCsvStep]       = useState("idle");
   const [csvTrades,     setCsvTrades]     = useState(null);
   const [dragOver,      setDragOver]      = useState(false);
   const [fileError,     setFileError]     = useState(null);
   const [fileName,      setFileName]      = useState(null);
-  const [trades,        setTrades]        = useState(MOCK_SYNCED_TRADES);
-  const [tradesLoading, setTradesLoading] = useState(false);
   const [importMsg,     setImportMsg]     = useState("");
   const fileRef = useRef(null);
 
-  // Load trades from backend on mount (if authenticated)
+  // ── Load trades ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!token) return;
     setTradesLoading(true);
-    api.get("/journal/trades", token)
-      .then(d => { if (d.success && d.data.trades?.length) setTrades(d.data.trades.map(apiTradeToLocal)); })
+    api.get("/journal/trades?limit=500", token)
+      .then(d => { if (d.success) setTrades((d.data.trades||[]).map(apiTradeToLocal)); })
       .catch(()=>{})
       .finally(()=>setTradesLoading(false));
   }, [token]);
 
-  // Map API trade shape → local shape expected by the UI
   const apiTradeToLocal = t => ({
-    id:          t.id,
-    instrument:  t.instrument,
-    trade_type:  t.direction === "long" ? "Buy" : "Sell",
-    open_price:  t.entryPrice,
-    close_price: t.exitPrice,
-    open_time:   t.openedAt,
-    close_time:  t.closedAt,
-    volume:      t.lotSize,
-    profit:      t.netPl ?? 0,
-    commission:  t.commission ?? 0,
-    session:     t.sessionTag ? (t.sessionTag === "ny" ? "NY" : t.sessionTag.charAt(0).toUpperCase() + t.sessionTag.slice(1)) : "—",
-    is_open:     !t.closedAt,
-    // Extended journal fields
-    timeframe:      t.timeframe,
-    thesis:         t.thesis,
-    emotionalState: t.emotionalState,
-    category:       t.category,
-    tags:           t.tags,
-    accountName:    t.accountName,
+    id:              t.id,
+    instrument:      t.instrument,
+    trade_type:      t.direction === "long" ? "Long" : "Short",
+    open_price:      parseFloat(t.entryPrice||t.entry_price||0),
+    close_price:     (t.exitPrice||t.exit_price) ? parseFloat(t.exitPrice||t.exit_price) : null,
+    open_time:       t.openedAt||t.opened_at||null,
+    close_time:      t.closedAt||t.closed_at||null,
+    volume:          parseFloat(t.lotSize||t.lot_size||0),
+    profit:          parseFloat(t.netPl??t.net_pl??0),
+    commission:      parseFloat(t.commission||0),
+    stop_loss:       t.stopLoss||t.stop_loss||null,
+    take_profit:     t.takeProfit||t.take_profit||null,
+    r_multiple:      t.rMultiple||t.r_multiple||null,
+    session:         (t.sessionTag||t.session_tag) ? ((s=>s.charAt(0).toUpperCase()+s.slice(1))(t.sessionTag||t.session_tag)) : "—",
+    timeframe:       t.timeframe||null,
+    emotional_state: t.emotionalState||t.emotional_state||null,
+    category:        t.category||null,
+    tags:            t.tags||[],
+    thesis:          t.thesis||null,
+    notes:           t.notes||null,
+    account_name:    t.accountName||t.account_name||null,
+    is_open:         !(t.closedAt||t.closed_at),
   });
 
-  const conn = connections.find(c=>c.id===selectedConn);
-  const allTrades = trades;
-  const closedTrades = allTrades.filter(t=>!t.is_open);
-  const openTrades   = allTrades.filter(t=>t.is_open);
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const closedTrades = trades.filter(t=>!t.is_open);
+  const openTrades   = trades.filter(t=>t.is_open);
 
-  // ── Stats ────────────────────────────────────────────────────────────────
+  // ── Stats ─────────────────────────────────────────────────────────────────
   const wins      = closedTrades.filter(t=>t.profit>0).length;
-  const losses    = closedTrades.filter(t=>t.profit<=0).length;
-  const winRate   = closedTrades.length>0 ? Math.round((wins/closedTrades.length)*100) : 0;
-  const totalPnl  = closedTrades.reduce((a,t)=>a+t.profit+t.commission,0);
+  const losses    = closedTrades.filter(t=>t.profit<0).length;
+  const breakeven = closedTrades.filter(t=>t.profit===0).length;
+  const winRate   = closedTrades.length>0 ? ((wins/closedTrades.length)*100).toFixed(1) : "0.0";
+  const totalPnl  = closedTrades.reduce((a,t)=>a+t.profit,0);
   const grossWin  = closedTrades.filter(t=>t.profit>0).reduce((a,t)=>a+t.profit,0);
-  const grossLoss = Math.abs(closedTrades.filter(t=>t.profit<=0).reduce((a,t)=>a+t.profit,0));
+  const grossLoss = Math.abs(closedTrades.filter(t=>t.profit<0).reduce((a,t)=>a+t.profit,0));
   const pf        = grossLoss>0 ? (grossWin/grossLoss).toFixed(2) : "∞";
-  const avgWin    = wins>0  ? (grossWin/wins).toFixed(2)    : "0.00";
-  const avgLoss   = losses>0? (grossLoss/losses).toFixed(2) : "0.00";
-  const maxDD     = (() => { let peak=0,dd=0,run=0; closedTrades.forEach(t=>{ run+=t.profit+t.commission; if(run>peak)peak=run; if(peak-run>dd)dd=peak-run; }); return dd.toFixed(2); })();
-  const bySession = { London:0, NY:0, Asia:0 };
-  closedTrades.forEach(t=>{ if(bySession[t.session]!==undefined) bySession[t.session]++; });
+  const avgWin    = wins>0   ? (grossWin/wins).toFixed(2)    : "0.00";
+  const avgLoss   = losses>0 ? (grossLoss/losses).toFixed(2) : "0.00";
+  const avgRR     = (() => { const rs=closedTrades.filter(t=>t.r_multiple); return rs.length>0?(rs.reduce((a,t)=>a+(t.r_multiple||0),0)/rs.length).toFixed(2):"—"; })();
+  const maxDD     = (() => { let peak=0,dd=0,run=0; [...closedTrades].sort((a,b)=>new Date(a.open_time)-new Date(b.open_time)).forEach(t=>{ run+=t.profit; if(run>peak)peak=run; if(peak-run>dd)dd=peak-run; }); return dd.toFixed(2); })();
 
-  // Duration helper
-  const calcDur = t => {
-    if (!t.close_time||t.is_open) return "Open";
-    const ms = new Date(t.close_time)-new Date(t.open_time);
-    const m  = Math.floor(ms/60000);
-    return m<60 ? `${m}m` : `${Math.floor(m/60)}h ${m%60}m`;
-  };
-  const fmtPrice = (t,price) => {
-    const dp = (t.instrument.includes("JPY")||t.instrument.includes("BTC")||t.instrument.includes("NAS")||t.instrument.includes("XAU")) ? 2 : 5;
-    return price.toFixed(dp);
-  };
-  const fmtDate = iso => new Date(iso).toLocaleDateString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+  // ── Analytics ─────────────────────────────────────────────────────────────
+  const DOW_LABELS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const byDow = DOW_LABELS.map((_,i) => {
+    const jsDay = i===6?0:i+1;
+    const ts = closedTrades.filter(t=>t.open_time && new Date(t.open_time).getDay()===jsDay);
+    const w  = ts.filter(t=>t.profit>0).length;
+    return { label:DOW_LABELS[i], count:ts.length, pnl:ts.reduce((a,t)=>a+t.profit,0), wr:ts.length>0?Math.round((w/ts.length)*100):0 };
+  });
+  const byHour = Array.from({length:24},(_,h) => {
+    const ts = closedTrades.filter(t=>t.open_time && new Date(t.open_time).getHours()===h);
+    return { hour:h, count:ts.length, pnl:ts.reduce((a,t)=>a+t.profit,0) };
+  });
+  const byInstrument = [...new Set(closedTrades.map(t=>t.instrument))].map(inst => {
+    const ts=closedTrades.filter(t=>t.instrument===inst);
+    const w=ts.filter(t=>t.profit>0).length;
+    const gw=ts.filter(t=>t.profit>0).reduce((a,t)=>a+t.profit,0);
+    const gl=Math.abs(ts.filter(t=>t.profit<0).reduce((a,t)=>a+t.profit,0));
+    return { inst, count:ts.length, wr:Math.round((w/ts.length)*100), pnl:ts.reduce((a,t)=>a+t.profit,0), pf:gl>0?(gw/gl).toFixed(2):"∞", avgW:w>0?(gw/w).toFixed(2):"0.00", avgL:(ts.length-w)>0?(gl/(ts.length-w)).toFixed(2):"0.00" };
+  }).sort((a,b)=>b.pnl-a.pnl);
+  const byMonth = (() => {
+    const map={};
+    closedTrades.forEach(t=>{ if(!t.open_time) return; const d=new Date(t.open_time); const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; if(!map[key]) map[key]={label:d.toLocaleDateString("en-GB",{month:"short",year:"numeric"}),pnl:0,count:0,wins:0}; map[key].pnl+=t.profit; map[key].count++; if(t.profit>0) map[key].wins++; });
+    return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([,v])=>v);
+  })();
+  const { curStreak, maxWinStreak, maxLossStreak } = (() => {
+    const sorted=[...closedTrades].sort((a,b)=>new Date(a.open_time)-new Date(b.open_time));
+    let cur=0,maxW=0,maxL=0,runW=0,runL=0;
+    sorted.forEach(t=>{ if(t.profit>0){runW++;runL=0;if(runW>maxW)maxW=runW;cur=runW;}else{runL++;runW=0;if(runL>maxL)maxL=runL;cur=-runL;} });
+    return {curStreak:cur,maxWinStreak:maxW,maxLossStreak:maxL};
+  })();
 
-  // ── Calendar data ────────────────────────────────────────────────────────
+  // ── Equity curve ──────────────────────────────────────────────────────────
+  const equityCurve = (() => { let run=0; return [...closedTrades].sort((a,b)=>new Date(a.open_time)-new Date(b.open_time)).map(t=>{run+=t.profit;return run;}); })();
+
+  // ── Calendar ──────────────────────────────────────────────────────────────
+  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   const calDays = (() => {
-    const {y,m} = calMonth;
-    const first = new Date(y,m,1).getDay(); // 0=Sun
-    const days  = new Date(y,m+1,0).getDate();
-    const pad   = first===0 ? 6 : first-1; // Monday start
-    const result = [];
-    for (let i=0;i<pad;i++) result.push(null);
-    for (let d=1;d<=days;d++) {
-      const iso = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-      const dayTrades = closedTrades.filter(t => t.open_time && t.open_time.startsWith(iso));
-      const dayPnl    = dayTrades.reduce((a,t)=>a+t.profit+t.commission,0);
-      result.push({ d, iso, trades:dayTrades, pnl:dayPnl, hasData:dayTrades.length>0 });
-    }
+    const {y,m}=calMonth;
+    const first=new Date(y,m,1).getDay(); const days=new Date(y,m+1,0).getDate(); const pad=first===0?6:first-1; const result=[];
+    for(let i=0;i<pad;i++) result.push(null);
+    for(let d=1;d<=days;d++){const iso=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;const dayTrades=closedTrades.filter(t=>t.open_time&&t.open_time.startsWith(iso));const dayPnl=dayTrades.reduce((a,t)=>a+t.profit,0);result.push({d,iso,trades:dayTrades,pnl:dayPnl,hasData:dayTrades.length>0});}
     return result;
   })();
   const monthPnl = calDays.reduce((a,d)=>a+(d?d.pnl:0),0);
-  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-  // ── Filtered trade list ───────────────────────────────────────────────────
-  const instruments = ["All",...new Set(allTrades.map(t=>t.instrument))];
-  const filteredTrades = [...allTrades]
-    .filter(t => filterInstr==="All" || t.instrument===filterInstr)
-    .filter(t => filterType==="All"  || t.trade_type===filterType)
-    .sort((a,b) => {
-      const va = sortField==="open_time"?new Date(a.open_time):sortField==="profit"?(a.profit+a.commission):a[sortField];
-      const vb = sortField==="open_time"?new Date(b.open_time):sortField==="profit"?(b.profit+b.commission):b[sortField];
-      return sortDir==="asc" ? (va>vb?1:-1) : (va<vb?1:-1);
-    });
+  // ── Filters ───────────────────────────────────────────────────────────────
+  const instruments = ["All",...new Set(trades.map(t=>t.instrument).filter(Boolean))];
+  const filteredTrades = [...trades]
+    .filter(t=>filterInstr==="All"||t.instrument===filterInstr)
+    .filter(t=>filterDir==="All"||(filterDir==="Long"&&t.trade_type==="Long")||(filterDir==="Short"&&t.trade_type==="Short"))
+    .filter(t=>filterSession==="All"||t.session.toLowerCase()===filterSession.toLowerCase())
+    .filter(t=>{ if(filterResult==="All") return true; if(filterResult==="Win") return t.profit>0; if(filterResult==="Loss") return t.profit<0; if(filterResult==="Breakeven") return t.profit===0; return true; })
+    .filter(t=>!filterFrom||!t.open_time||t.open_time>=filterFrom)
+    .filter(t=>!filterTo  ||!t.open_time||t.open_time<=filterTo+"T23:59:59")
+    .sort((a,b)=>{ const va=sortField==="open_time"?new Date(a.open_time||0):sortField==="profit"?a.profit:a[sortField]||0; const vb=sortField==="open_time"?new Date(b.open_time||0):sortField==="profit"?b.profit:b[sortField]||0; return sortDir==="asc"?(va>vb?1:-1):(va<vb?1:-1); });
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const calcDur = t => { if(!t.close_time||t.is_open) return "Open"; const ms=new Date(t.close_time)-new Date(t.open_time); const m=Math.floor(ms/60000); return m<60?`${m}m`:`${Math.floor(m/60)}h ${m%60}m`; };
+  const fmtDate = iso => iso?new Date(iso).toLocaleDateString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—";
+  const fmtP    = v => v!=null?parseFloat(v).toFixed(5):"—";
 
   const SortTh = ({field,label}) => (
-    <th onClick={() => { if(sortField===field) setSortDir(d=>d==="asc"?"desc":"asc"); else { setSortField(field); setSortDir("desc"); }}}
-      style={{ padding:"7px 10px", textAlign:"left", fontSize:9, color:sortField===field?C.accent:C.textDim, fontWeight:500, letterSpacing:".05em", textTransform:"uppercase", whiteSpace:"nowrap", cursor:"pointer", userSelect:"none" }}>
-      {label}{sortField===field && <span style={{ marginLeft:4 }}>{sortDir==="asc"?"↑":"↓"}</span>}
+    <th onClick={()=>{ if(sortField===field) setSortDir(d=>d==="asc"?"desc":"asc"); else{setSortField(field);setSortDir("desc");} }}
+      style={{padding:"7px 10px",textAlign:"left",fontSize:9,color:sortField===field?C.accent:C.textDim,fontWeight:500,letterSpacing:".05em",textTransform:"uppercase",whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"}}>
+      {label}{sortField===field&&<span style={{marginLeft:4}}>{sortDir==="asc"?"↑":"↓"}</span>}
     </th>
   );
+
+  // ── Export CSV ────────────────────────────────────────────────────────────
+  const exportCSV = () => {
+    const hdrs=["Date","Instrument","Direction","Entry","Exit","Lots","P&L","Commission","Session","Timeframe","Duration","R-Multiple","Tags","Notes"];
+    const rows=filteredTrades.map(t=>[fmtDate(t.open_time),t.instrument,t.trade_type,t.open_price||"",t.close_price||"",t.volume||"",t.profit?.toFixed(2)||"",t.commission?.toFixed(2)||"",t.session,t.timeframe||"",calcDur(t),t.r_multiple||"",(Array.isArray(t.tags)?t.tags.join(";"):t.tags)||"",`"${(t.notes||"").replace(/"/g,'""')}"`]);
+    const csv=[hdrs,...rows].map(r=>r.join(",")).join("\n");
+    const url=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+    const a=document.createElement("a"); a.href=url; a.download=`fortitude_trades_${new Date().toISOString().split("T")[0]}.csv`; a.click(); URL.revokeObjectURL(url);
+  };
+
+  // ── Manual entry ──────────────────────────────────────────────────────────
+  const openAdd = () => { const now=new Date(); now.setSeconds(0,0); setForm({...BLANK,opened_at:now.toISOString().slice(0,16)}); setEditId(null); setFormMode("add"); setFormErr(""); setFormOpen(true); };
+  const openEdit = t => {
+    setForm({ instrument:t.instrument||"", direction:t.trade_type==="Long"?"long":"short", entry_price:t.open_price||"", exit_price:t.close_price||"", lot_size:t.volume||"", net_pl:t.profit||"", commission:t.commission||"0", stop_loss:t.stop_loss||"", take_profit:t.take_profit||"", r_multiple:t.r_multiple||"", session_tag:(t.session||"ny").toLowerCase(), timeframe:t.timeframe||"15m", opened_at:t.open_time?t.open_time.slice(0,16):"", closed_at:t.close_time?t.close_time.slice(0,16):"", emotional_state:t.emotional_state||"", category:t.category||"", tags:Array.isArray(t.tags)?t.tags.join(", "):(t.tags||""), thesis:t.thesis||"", notes:t.notes||"", account_name:t.account_name||"" });
+    setEditId(t.id); setFormMode("edit"); setFormErr(""); setFormOpen(true);
+  };
+  const saveForm = async () => {
+    if(!form.instrument.trim()||!form.entry_price){setFormErr("Instrument and entry price are required.");return;}
+    setFormSaving(true); setFormErr("");
+    const payload={ instrument:form.instrument.trim().toUpperCase(), direction:form.direction, entry_price:parseFloat(form.entry_price), exit_price:form.exit_price?parseFloat(form.exit_price):null, lot_size:parseFloat(form.lot_size)||1, net_pl:form.net_pl?parseFloat(form.net_pl):null, commission:parseFloat(form.commission)||0, stop_loss:form.stop_loss?parseFloat(form.stop_loss):null, take_profit:form.take_profit?parseFloat(form.take_profit):null, r_multiple:form.r_multiple?parseFloat(form.r_multiple):null, session_tag:form.session_tag||null, timeframe:form.timeframe||null, opened_at:form.opened_at?new Date(form.opened_at).toISOString():new Date().toISOString(), closed_at:form.closed_at?new Date(form.closed_at).toISOString():null, emotional_state:form.emotional_state||null, category:form.category||null, tags:form.tags?form.tags.split(",").map(s=>s.trim()).filter(Boolean):[], thesis:form.thesis||null, notes:form.notes||null, account_name:form.account_name||null };
+    try {
+      const data = formMode==="add" ? await api.post("/journal/trades",payload,token) : await api.put(`/journal/trades/${editId}`,payload,token);
+      if(data.success){
+        const saved=apiTradeToLocal(data.data.trade);
+        if(formMode==="add") setTrades(prev=>[saved,...prev]);
+        else { setTrades(prev=>prev.map(t=>t.id===editId?saved:t)); if(detailTrade?.id===editId) setDetailTrade(saved); }
+        setFormOpen(false);
+      } else setFormErr(data.error?.message||"Failed to save trade.");
+    } catch { setFormErr("Unable to connect. Please try again."); }
+    finally { setFormSaving(false); }
+  };
+  const deleteTrade = async () => {
+    if(!deleteId) return; setDeleting(true);
+    try { const data=await api.del(`/journal/trades/${deleteId}`,token); if(data.success){setTrades(prev=>prev.filter(t=>t.id!==deleteId));if(detailTrade?.id===deleteId)setDetailTrade(null);setDeleteId(null);} }
+    catch {} finally { setDeleting(false); }
+  };
 
   // ── CSV import ────────────────────────────────────────────────────────────
   const handleFile = file => {
@@ -2651,216 +2719,142 @@ const Journal = ({ setPage, currentTier, user }) => {
     const reader = new FileReader();
     reader.onload = e => {
       try {
-        const text = e.target.result;
-        const { headers, rows } = parseCSV(text);
+        const { headers, rows } = parseCSV(e.target.result);
         const platform = detectPlatform(headers);
         if (!platform) { setCsvStep("idle"); setFileError("Could not detect broker format. Supported: MT4/MT5, cTrader, Tradovate."); return; }
         const parsed = normaliseTrades(rows, platform);
         if (!parsed.length) { setCsvStep("idle"); setFileError("No valid trades found in this file."); return; }
-        setCsvTrades(parsed);
-        setCsvStep("preview");
+        setCsvTrades(parsed); setCsvStep("preview");
       } catch { setCsvStep("idle"); setFileError("Failed to read file. Please check it's a valid CSV."); }
     };
     reader.readAsText(file);
   };
-
   const confirmImport = async () => {
     if (!csvTrades?.length) return;
     setCsvStep("importing"); setImportMsg("");
     try {
-      // Map normalised trades to backend shape
-      const payload = csvTrades.map(t => ({
-        instrument:  t.instrument,
-        direction:   (t.type || "").toLowerCase().includes("buy") || (t.type || "").toLowerCase().includes("long") ? "long" : "short",
-        entry_price: t.openPrice || 0,
-        exit_price:  t.closePrice || null,
-        lot_size:    t.size || 1,
-        net_pl:      (t.profit || 0) + (t.commission || 0) + (t.swap || 0),
-        commission:  Math.abs(t.commission || 0),
-        session_tag: (t.session || "").toLowerCase() || null,
-        opened_at:   t.openTime  || new Date().toISOString(),
-        closed_at:   t.closeTime || null,
-      }));
+      const payload = csvTrades.map(t => ({ instrument:t.instrument, direction:(t.type||"").toLowerCase().includes("buy")||(t.type||"").toLowerCase().includes("long")?"long":"short", entry_price:t.openPrice||0, exit_price:t.closePrice||null, lot_size:t.size||1, net_pl:(t.profit||0)+(t.commission||0)+(t.swap||0), commission:Math.abs(t.commission||0), session_tag:(t.session||"").toLowerCase()||null, opened_at:t.openTime||new Date().toISOString(), closed_at:t.closeTime||null }));
       const data = await api.post("/journal/import", { trades: payload }, token);
-      if (data.success) {
-        const imported = data.data?.trades?.map(apiTradeToLocal) || [];
-        setTrades(prev => [...imported, ...prev]);
-        setCsvStep("done");
-        setImportMsg(`Successfully imported ${data.data.imported} trade${data.data.imported !== 1 ? "s" : ""}.`);
-      } else {
-        setCsvStep("preview");
-        setImportMsg(data.error?.message || "Import failed.");
-      }
+      if (data.success) { setTrades(prev=>[...(data.data?.trades||[]).map(apiTradeToLocal),...prev]); setCsvStep("done"); setImportMsg(`Successfully imported ${data.data.imported} trade${data.data.imported!==1?"s":""}.`); }
+      else { setCsvStep("preview"); setImportMsg(data.error?.message||"Import failed."); }
     } catch { setCsvStep("preview"); setImportMsg("Unable to connect. Please try again."); }
   };
 
-  // ── Equity curve ─────────────────────────────────────────────────────────
-  const equityCurve = (() => {
-    let run=0;
-    return closedTrades.sort((a,b)=>new Date(a.open_time)-new Date(b.open_time)).map(t=>{ run+=t.profit+t.commission; return run; });
-  })();
-
   const VIEWS = [
-    {id:"dashboard",label:"Overview",      icon:"dashboard"},
-    {id:"calendar", label:"Calendar",      icon:"cal"},
-    {id:"trades",   label:"Trade Log",     icon:"activity"},
-    {id:"import",   label:"Import CSV",    icon:"upload"},
+    {id:"overview",  label:"Overview",  icon:"dashboard"},
+    {id:"analytics", label:"Analytics", icon:"activity"},
+    {id:"trades",    label:"Trade Log", icon:"list"},
+    {id:"calendar",  label:"Calendar",  icon:"cal"},
+    {id:"import",    label:"Import CSV",icon:"upload"},
   ];
 
   return (
     <div className="fi">
       {/* ── Page header ── */}
-      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:18, flexWrap:"wrap", gap:12 }}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18,flexWrap:"wrap",gap:12}}>
         <div>
-          <h1 style={{ fontFamily:"'Counter-Strike',sans-serif", fontSize:24, fontWeight:300, color:C.text, marginBottom:4 }}>Performance Journal</h1>
-          <p style={{ fontSize:13, color:C.textMuted }}>Trade history · Performance analytics · Account calendar</p>
+          <h1 style={{fontFamily:"'Counter-Strike',sans-serif",fontSize:24,fontWeight:300,color:C.text,marginBottom:4}}>Performance Journal</h1>
+          <p style={{fontSize:13,color:C.textMuted}}>Trade history · Performance analytics · Account calendar</p>
         </div>
-        {/* Account switcher */}
-        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-          {connections.map(c => (
-            <div key={c.id} onClick={() => setSelectedConn(c.id)} style={{ display:"flex", alignItems:"center", gap:7, padding:"7px 12px", borderRadius:6, cursor:"pointer", background:selectedConn===c.id?"rgba(41,168,255,.1)":"rgba(255,255,255,.03)", border:`1px solid ${selectedConn===c.id?"rgba(41,168,255,.3)":"rgba(255,255,255,.08)"}`, transition:"all .15s" }}>
-              <div style={{ width:6,height:6,borderRadius:"50%",background:c.sync_status==="live"?"#29ff88":"rgba(255,255,255,.2)",boxShadow:c.sync_status==="live"?"0 0 5px #29ff88":"none"}}/>
-              <div>
-                <div style={{ fontSize:11, fontWeight:600, color:selectedConn===c.id?C.accent:C.text }}>{c.display_name}</div>
-                <div style={{ fontSize:9, color:C.textDim }}>{c.account_number} · {c.stats.total_trades} trades</div>
-              </div>
-            </div>
-          ))}
-          <button className="btn bg" style={{ fontSize:11, padding:"7px 12px", display:"flex", alignItems:"center", gap:6 }} onClick={()=>setShowConnect(true)}>
-            <IC n="plus" s={11} c={C.accent}/> Connect Account
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button className="btn bg" style={{fontSize:11,padding:"7px 12px",display:"flex",alignItems:"center",gap:6}} onClick={exportCSV}>
+            <IC n="download" s={11} c={C.textMuted}/> Export CSV
+          </button>
+          <button className="btn bp" style={{fontSize:11,padding:"7px 14px",display:"flex",alignItems:"center",gap:6}} onClick={openAdd}>
+            <IC n="plus" s={11} c="#000"/> Add Trade
           </button>
         </div>
       </div>
 
       {/* ── Sub-nav ── */}
-      <div style={{ display:"flex", gap:2, marginBottom:18, borderBottom:`1px solid ${C.border}`, overflowX:"auto", scrollbarWidth:"none" }}>
-        {VIEWS.map(v => (
-          <div key={v.id} onClick={() => setView(v.id)} style={{ display:"flex", alignItems:"center", gap:7, padding:"9px 16px", cursor:"pointer", fontSize:12, fontWeight:500, color:view===v.id?C.accent:C.textMuted, borderBottom:`2px solid ${view===v.id?C.accent:"transparent"}`, marginBottom:-1, transition:"all .15s", whiteSpace:"nowrap" }}>
+      <div style={{display:"flex",gap:2,marginBottom:18,borderBottom:`1px solid ${C.border}`,overflowX:"auto",scrollbarWidth:"none"}}>
+        {VIEWS.map(v=>(
+          <div key={v.id} onClick={()=>setView(v.id)} style={{display:"flex",alignItems:"center",gap:7,padding:"9px 16px",cursor:"pointer",fontSize:12,fontWeight:500,color:view===v.id?C.accent:C.textMuted,borderBottom:`2px solid ${view===v.id?C.accent:"transparent"}`,marginBottom:-1,transition:"all .15s",whiteSpace:"nowrap"}}>
             <IC n={v.icon} s={13} c={view===v.id?C.accent:C.textDim}/>
             {v.label}
           </div>
         ))}
-        {openTrades.length > 0 && (
-          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6, paddingRight:4 }}>
-            <div style={{ width:6,height:6,borderRadius:"50%",background:"#29ff88",boxShadow:"0 0 5px #29ff88"}}/>
-            <span style={{ fontSize:11, color:C.textDim }}>{openTrades.length} open position{openTrades.length>1?"s":""}</span>
+        {openTrades.length>0&&(
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,paddingRight:4}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:"#29ff88",boxShadow:"0 0 5px #29ff88"}}/>
+            <span style={{fontSize:11,color:C.textDim}}>{openTrades.length} open</span>
           </div>
         )}
       </div>
 
-      {/* ════════════════════ OVERVIEW ════════════════════ */}
-      {view === "dashboard" && (
-        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-          {/* KPI strip */}
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))", gap:10 }}>
+      {/* ════════ OVERVIEW ════════ */}
+      {view==="overview"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
             {[
-              {l:"Win Rate",      v:`${winRate}%`,   sub:`${wins}W · ${losses}L`,           c:winRate>=50?C.accent:C.pink},
-              {l:"Net P&L",       v:`$${totalPnl>=0?"+":""}${totalPnl.toFixed(2)}`, sub:"After commissions", c:totalPnl>=0?C.accent:C.pink},
-              {l:"Profit Factor", v:pf,               sub:"Gross win/loss ratio",             c:parseFloat(pf)>=1.5?C.accent:parseFloat(pf)>=1?C.textMuted:C.pink},
-              {l:"Avg Win",       v:`$${avgWin}`,     sub:"Per winning trade",                c:C.accent},
-              {l:"Avg Loss",      v:`-$${avgLoss}`,   sub:"Per losing trade",                 c:C.pink},
-              {l:"Max Drawdown",  v:`-$${maxDD}`,     sub:"Largest equity dip",               c:C.pink},
-              {l:"Total Trades",  v:closedTrades.length, sub:"Closed positions",             c:C.text},
-              {l:"Open Trades",   v:openTrades.length,   sub:"Live positions",               c:openTrades.length>0?"#29ff88":C.textDim},
-            ].map(m => (
-              <div key={m.l} className="mc" style={{ padding:"12px 14px" }}>
-                <div style={{ fontSize:9, color:C.textDim, textTransform:"uppercase", letterSpacing:".06em", marginBottom:5 }}>{m.l}</div>
-                <div style={{ fontSize:18, fontWeight:600, color:m.c, fontFamily:"JetBrains Mono,monospace", lineHeight:1, marginBottom:3 }}>{m.v}</div>
-                <div style={{ fontSize:9, color:C.textDim }}>{m.sub}</div>
+              {l:"Win Rate",     v:`${winRate}%`,          sub:`${wins}W · ${losses}L · ${breakeven}BE`,   c:parseFloat(winRate)>=50?C.accent:C.pink},
+              {l:"Net P&L",      v:`${totalPnl>=0?"+":""}$${Math.abs(totalPnl).toFixed(2)}`, sub:"All closed trades", c:totalPnl>=0?C.accent:C.pink},
+              {l:"Profit Factor",v:pf,                     sub:"Gross win/loss ratio",                     c:parseFloat(pf)>=1.5?C.accent:parseFloat(pf)>=1?C.textMuted:C.pink},
+              {l:"Avg Win",      v:`$${avgWin}`,           sub:"Per winning trade",                        c:C.accent},
+              {l:"Avg Loss",     v:`-$${avgLoss}`,         sub:"Per losing trade",                         c:C.pink},
+              {l:"Max Drawdown", v:`-$${maxDD}`,           sub:"Largest equity dip",                       c:C.pink},
+              {l:"Avg R:R",      v:avgRR,                  sub:"R-multiple (tagged trades)",               c:C.textMuted},
+              {l:"Total Trades", v:closedTrades.length,    sub:`${openTrades.length} open`,                c:C.text},
+            ].map(m=>(
+              <div key={m.l} className="mc" style={{padding:"12px 14px"}}>
+                <div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5}}>{m.l}</div>
+                <div style={{fontSize:18,fontWeight:600,color:m.c,fontFamily:"JetBrains Mono,monospace",lineHeight:1,marginBottom:3}}>{m.v}</div>
+                <div style={{fontSize:9,color:C.textDim}}>{m.sub}</div>
               </div>
             ))}
           </div>
-
-          {/* Equity curve + session breakdown */}
-          <div style={{ display:"grid", gridTemplateColumns:"minmax(0,1fr) 240px", gap:14 }}>
-            <div className="mc" style={{ padding:"16px 20px" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-                <IC n="activity" s={13} c={C.accent}/>
-                <div className="sl" style={{ margin:0 }}>Equity Curve</div>
-                <span style={{ fontSize:10, color:totalPnl>=0?C.accent:C.pink, marginLeft:"auto" }}>{totalPnl>=0?"+":""}{totalPnl.toFixed(2)} total</span>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+            {[
+              {l:"Current Streak",    v:curStreak>0?`+${curStreak}W`:curStreak<0?`${Math.abs(curStreak)}L`:"—", c:curStreak>0?C.accent:curStreak<0?C.pink:C.textDim},
+              {l:"Best Win Streak",   v:`${maxWinStreak}W`,  c:C.accent},
+              {l:"Worst Loss Streak", v:`${maxLossStreak}L`, c:C.pink},
+            ].map(m=>(
+              <div key={m.l} className="mc" style={{padding:"12px 14px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5}}>{m.l}</div>
+                <div style={{fontSize:22,fontWeight:700,color:m.c,fontFamily:"JetBrains Mono,monospace"}}>{m.v}</div>
               </div>
-              {equityCurve.length > 1 ? (() => {
-                const W=400, H=100, mn=Math.min(...equityCurve), mx=Math.max(...equityCurve);
-                const pad=mx-mn<1?10:0;
-                const pts=equityCurve.map((v,i)=>`${(i/(equityCurve.length-1))*W},${H-((v-mn+pad)/((mx-mn+pad*2)||1))*(H-8)-4}`).join(" ");
-                const lastV=equityCurve[equityCurve.length-1];
-                return (
-                  <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:100 }}>
-                    <polyline fill="none" stroke={lastV>=0?"#29a8ff":"#e91ea7"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" points={pts}/>
-                    <polyline fill={lastV>=0?"rgba(41,168,255,0.08)":"rgba(233,30,167,0.08)"} stroke="none" points={`0,${H} ${pts} ${W},${H}`}/>
-                    <line x1={0} y1={H-((0-mn+pad)/((mx-mn+pad*2)||1))*(H-8)-4} x2={W} y2={H-((0-mn+pad)/((mx-mn+pad*2)||1))*(H-8)-4} stroke="rgba(255,255,255,.1)" strokeWidth=".5" strokeDasharray="3,4"/>
-                  </svg>
-                );
-              })() : <div style={{ height:100, display:"flex", alignItems:"center", justifyContent:"center", color:C.textDim, fontSize:12 }}>No closed trades yet</div>}
-            </div>
-
-            <div className="mc" style={{ padding:"16px 18px" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
-                <IC n="globe" s={13} c={C.accent}/>
-                <div className="sl" style={{ margin:0 }}>By Session</div>
-              </div>
-              {Object.entries(bySession).map(([sess,count]) => {
-                const sessTotal = closedTrades.filter(t=>t.session===sess).reduce((a,t)=>a+t.profit+t.commission,0);
-                const sessW = closedTrades.filter(t=>t.session===sess&&t.profit>0).length;
-                const sessAll = closedTrades.filter(t=>t.session===sess).length;
-                const sessWr = sessAll>0?Math.round((sessW/sessAll)*100):0;
-                return (
-                  <div key={sess} style={{ marginBottom:12 }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-                      <span style={{ fontSize:11, color:C.text }}>{sess}</span>
-                      <div style={{ display:"flex", gap:8 }}>
-                        <span style={{ fontSize:11, color:sessTotal>=0?C.accent:C.pink, fontFamily:"JetBrains Mono,monospace" }}>{sessTotal>=0?"+":""}{sessTotal.toFixed(0)}</span>
-                        <span style={{ fontSize:10, color:C.textDim }}>{sessWr}%</span>
-                      </div>
-                    </div>
-                    <div style={{ height:3, background:"rgba(255,255,255,.05)", borderRadius:2, overflow:"hidden" }}>
-                      <div style={{ height:"100%", width:`${sessAll>0?(count/closedTrades.length)*100:0}%`, background:C.accent, borderRadius:2 }}/>
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{ marginTop:14, paddingTop:10, borderTop:`1px solid ${C.border}` }}>
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-                  <IC n="activity" s={11} c={C.textDim}/>
-                  <div style={{ fontSize:9, color:C.textDim, textTransform:"uppercase", letterSpacing:".05em" }}>By Instrument</div>
-                </div>
-                {[...new Set(closedTrades.map(t=>t.instrument))].map(inst => {
-                  const instTrades = closedTrades.filter(t=>t.instrument===inst);
-                  const instPnl = instTrades.reduce((a,t)=>a+t.profit+t.commission,0);
-                  return (
-                    <div key={inst} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:5 }}>
-                      <span style={{ fontSize:11, fontWeight:500, color:C.text }}>{inst}</span>
-                      <span style={{ fontSize:10, color:instPnl>=0?C.accent:C.pink, fontFamily:"JetBrains Mono,monospace" }}>{instPnl>=0?"+":""}{instPnl.toFixed(0)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            ))}
           </div>
-
-          {/* Open positions */}
-          {openTrades.length > 0 && (
-            <div className="mc" style={{ padding:"16px 20px", borderColor:"rgba(41,255,136,.15)" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-                <div style={{ width:6,height:6,borderRadius:"50%",background:"#29ff88",boxShadow:"0 0 5px #29ff88"}}/>
-                <div className="sl" style={{ margin:0, color:"#29ff88" }}>Open Positions</div>
+          <div className="mc" style={{padding:"16px 20px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+              <IC n="activity" s={13} c={C.accent}/>
+              <div className="sl" style={{margin:0}}>Equity Curve</div>
+              <span style={{fontSize:10,color:totalPnl>=0?C.accent:C.pink,marginLeft:"auto"}}>{totalPnl>=0?"+":""}{totalPnl.toFixed(2)}</span>
+            </div>
+            {equityCurve.length>1?(()=>{
+              const W=500,H=100,mn=Math.min(...equityCurve),mx=Math.max(...equityCurve),pad=mx-mn<1?10:0;
+              const pts=equityCurve.map((v,i)=>`${(i/(equityCurve.length-1))*W},${H-((v-mn+pad)/((mx-mn+pad*2)||1))*(H-8)-4}`).join(" ");
+              const lastV=equityCurve[equityCurve.length-1];
+              return(
+                <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:100}}>
+                  <polyline fill="none" stroke={lastV>=0?"#29a8ff":"#e91ea7"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" points={pts}/>
+                  <polyline fill={lastV>=0?"rgba(41,168,255,0.08)":"rgba(233,30,167,0.08)"} stroke="none" points={`0,${H} ${pts} ${W},${H}`}/>
+                  <line x1={0} y1={H-((0-mn+pad)/((mx-mn+pad*2)||1))*(H-8)-4} x2={W} y2={H-((0-mn+pad)/((mx-mn+pad*2)||1))*(H-8)-4} stroke="rgba(255,255,255,.1)" strokeWidth=".5" strokeDasharray="3,4"/>
+                </svg>
+              );
+            })():<div style={{height:100,display:"flex",alignItems:"center",justifyContent:"center",color:C.textDim,fontSize:12}}>No closed trades yet — add your first trade to see your equity curve.</div>}
+          </div>
+          {openTrades.length>0&&(
+            <div className="mc" style={{padding:"16px 20px",borderColor:"rgba(41,255,136,.15)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                <div style={{width:6,height:6,borderRadius:"50%",background:"#29ff88",boxShadow:"0 0 5px #29ff88"}}/>
+                <div className="sl" style={{margin:0,color:"#29ff88"}}>Open Positions</div>
               </div>
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
-                <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>
-                  {["Instrument","Type","Entry","Size","Session","Duration","Unrealised"].map(h=>(
-                    <th key={h} style={{ padding:"5px 8px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, textTransform:"uppercase", letterSpacing:".05em" }}>{h}</th>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
+                  {["Instrument","Direction","Entry","Size","Session","Duration"].map(h=>(
+                    <th key={h} style={{padding:"5px 8px",textAlign:"left",fontSize:9,color:C.textDim,fontWeight:500,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
                   {openTrades.map(t=>(
-                    <tr key={t.id} style={{ borderBottom:`1px solid rgba(255,255,255,.04)` }}>
-                      <td style={{ padding:"7px 8px", fontWeight:600, color:C.text }}>{t.instrument}</td>
-                      <td style={{ padding:"7px 8px" }}><span style={{ fontSize:10, padding:"2px 6px", borderRadius:3, background:t.trade_type==="Long"?"rgba(41,168,255,.1)":"rgba(233,30,167,.1)", color:t.trade_type==="Long"?C.accent:C.pink, border:`1px solid ${t.trade_type==="Long"?"rgba(41,168,255,.25)":"rgba(233,30,167,.25)"}` }}>{t.trade_type}</span></td>
-                      <td style={{ padding:"7px 8px", fontFamily:"JetBrains Mono,monospace", fontSize:10, color:C.textMuted }}>{fmtPrice(t,t.open_price)}</td>
-                      <td style={{ padding:"7px 8px", color:C.textMuted }}>{t.volume}</td>
-                      <td style={{ padding:"7px 8px", color:C.textDim }}>{t.session}</td>
-                      <td style={{ padding:"7px 8px", fontFamily:"JetBrains Mono,monospace", fontSize:10, color:C.textDim }}>{calcDur(t)}</td>
-                      <td style={{ padding:"7px 8px", fontWeight:600, fontFamily:"JetBrains Mono,monospace", color:"#29ff88" }}>+{t.profit.toFixed(2)}</td>
+                    <tr key={t.id} style={{borderBottom:`1px solid rgba(255,255,255,.04)`,cursor:"pointer"}} onClick={()=>setDetailTrade(t)}>
+                      <td style={{padding:"7px 8px",fontWeight:600,color:C.text}}>{t.instrument}</td>
+                      <td style={{padding:"7px 8px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:3,background:t.trade_type==="Long"?"rgba(41,168,255,.1)":"rgba(233,30,167,.1)",color:t.trade_type==="Long"?C.accent:C.pink,border:`1px solid ${t.trade_type==="Long"?"rgba(41,168,255,.25)":"rgba(233,30,167,.25)"}`}}>{t.trade_type}</span></td>
+                      <td style={{padding:"7px 8px",fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.textMuted}}>{fmtP(t.open_price)}</td>
+                      <td style={{padding:"7px 8px",color:C.textMuted}}>{t.volume}</td>
+                      <td style={{padding:"7px 8px",color:C.textDim}}>{t.session}</td>
+                      <td style={{padding:"7px 8px",fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.textDim}}>{calcDur(t)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2870,85 +2864,268 @@ const Journal = ({ setPage, currentTier, user }) => {
         </div>
       )}
 
-      {/* ════════════════════ CALENDAR ════════════════════ */}
-      {view === "calendar" && (
-        <div>
-          {/* Calendar header */}
-          <div className="mc" style={{ padding:"14px 18px", marginBottom:14 }}>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                <button className="btn bg" style={{ fontSize:11, padding:"5px 10px" }} onClick={()=>setCalMonth(p=>{ const d=new Date(p.y,p.m-1); return {y:d.getFullYear(),m:d.getMonth()}; })}>‹</button>
-                <h2 style={{ fontSize:16, fontWeight:500, color:C.text }}>{MONTH_NAMES[calMonth.m]} {calMonth.y}</h2>
-                <button className="btn bg" style={{ fontSize:11, padding:"5px 10px" }} onClick={()=>setCalMonth(p=>{ const d=new Date(p.y,p.m+1); return {y:d.getFullYear(),m:d.getMonth()}; })}>›</button>
-                <button className="btn bg" style={{ fontSize:11, padding:"5px 10px" }} onClick={()=>{ const d=new Date(); setCalMonth({y:d.getFullYear(),m:d.getMonth()}); }}>Today</button>
-              </div>
-              <div style={{ display:"flex", gap:12, alignItems:"center" }}>
-                {conn && <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <div style={{ width:5,height:5,borderRadius:"50%",background:conn.sync_status==="live"?"#29ff88":"rgba(255,255,255,.2)"}}/>
-                  <span style={{ fontSize:11, color:C.textDim }}>{conn.display_name}</span>
-                </div>}
-                <span style={{ fontSize:12, fontWeight:600, color:monthPnl>=0?C.accent:C.pink, fontFamily:"JetBrains Mono,monospace" }}>Month: {monthPnl>=0?"+":""}{monthPnl.toFixed(2)}</span>
-              </div>
+      {/* ════════ ANALYTICS ════════ */}
+      {view==="analytics"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {closedTrades.length===0?(
+            <div className="mc" style={{padding:"40px 28px",textAlign:"center"}}>
+              <IC n="activity" s={28} c={C.textDim}/>
+              <p style={{fontSize:14,color:C.textMuted,marginTop:12}}>No closed trades yet. Add trades to see analytics.</p>
             </div>
-
-            {/* Day headers */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4, marginBottom:4 }}>
-              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>(
-                <div key={d} style={{ textAlign:"center", fontSize:10, color:C.textDim, fontWeight:600, padding:"4px 0", letterSpacing:".05em" }}>{d}</div>
+          ):(<>
+          {/* DOW */}
+          <div className="mc" style={{padding:"16px 20px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+              <IC n="cal" s={13} c={C.accent}/>
+              <div className="sl" style={{margin:0}}>Performance by Day of Week</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8}}>
+              {byDow.map(d=>{
+                const maxAbs=Math.max(...byDow.map(x=>Math.abs(x.pnl)),1);
+                const barH=Math.max(4,Math.abs(d.pnl/maxAbs)*80);
+                return(
+                  <div key={d.label} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                    <div style={{fontSize:10,color:d.pnl>=0?C.accent:C.pink,fontFamily:"JetBrains Mono,monospace",minHeight:16}}>{d.count>0?(d.pnl>=0?"+":"")+(d.pnl.toFixed(0)):""}</div>
+                    <div style={{height:80,display:"flex",alignItems:"flex-end"}}>
+                      <div style={{width:28,height:barH,background:d.count===0?"rgba(255,255,255,.06)":d.pnl>=0?"rgba(41,168,255,.5)":"rgba(233,30,167,.5)",borderRadius:"3px 3px 0 0"}}/>
+                    </div>
+                    <div style={{fontSize:10,color:C.textMuted,fontWeight:500}}>{d.label}</div>
+                    <div style={{fontSize:9,color:C.textDim}}>{d.count>0?`${d.wr}% WR`:""}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* Hourly heatmap */}
+          <div className="mc" style={{padding:"16px 20px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+              <IC n="clock" s={13} c={C.accent}/>
+              <div className="sl" style={{margin:0}}>Trade Activity by Hour (UTC)</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(24,1fr)",gap:3}}>
+              {byHour.map(h=>{
+                const maxC=Math.max(...byHour.map(x=>x.count),1);
+                const op=h.count>0?0.15+0.7*(h.count/maxC):0.04;
+                const col=h.pnl>=0?"rgba(41,168,255,":"rgba(233,30,167,";
+                return(
+                  <div key={h.hour} title={`${String(h.hour).padStart(2,"0")}:00 — ${h.count} trades`}
+                    style={{height:32,borderRadius:3,background:`${col}${op})`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {h.count>0&&<div style={{fontSize:7,color:C.textDim}}>{h.count}</div>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+              {[0,6,12,18,23].map(h=>(
+                <span key={h} style={{fontSize:8,color:C.textDim}}>{String(h).padStart(2,"0")}:00</span>
               ))}
             </div>
+          </div>
+          {/* Instrument breakdown */}
+          <div className="mc" style={{padding:"16px 20px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+              <IC n="chart" s={13} c={C.accent}/>
+              <div className="sl" style={{margin:0}}>Instrument Breakdown</div>
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
+                  {["Instrument","Trades","Win Rate","Net P&L","Profit Factor","Avg Win","Avg Loss"].map(h=>(
+                    <th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,color:C.textDim,fontWeight:500,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {byInstrument.map(r=>(
+                    <tr key={r.inst} style={{borderBottom:`1px solid rgba(255,255,255,.04)`}}>
+                      <td style={{padding:"8px 10px",fontWeight:600,color:C.text}}>{r.inst}</td>
+                      <td style={{padding:"8px 10px",color:C.textMuted}}>{r.count}</td>
+                      <td style={{padding:"8px 10px",color:r.wr>=50?C.accent:C.pink}}>{r.wr}%</td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",fontWeight:600,color:r.pnl>=0?C.accent:C.pink}}>{r.pnl>=0?"+":""}{r.pnl.toFixed(2)}</td>
+                      <td style={{padding:"8px 10px",color:parseFloat(r.pf)>=1?C.accent:C.pink}}>{r.pf}</td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",color:C.accent}}>+{r.avgW}</td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",color:C.pink}}>-{r.avgL}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {/* Monthly P&L */}
+          {byMonth.length>0&&(
+            <div className="mc" style={{padding:"16px 20px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                <IC n="cal" s={13} c={C.accent}/>
+                <div className="sl" style={{margin:0}}>Monthly P&L</div>
+              </div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
+                  {["Month","Trades","Win Rate","Net P&L"].map(h=>(
+                    <th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,color:C.textDim,fontWeight:500,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {byMonth.map((r,i)=>(
+                    <tr key={i} style={{borderBottom:`1px solid rgba(255,255,255,.04)`}}>
+                      <td style={{padding:"8px 10px",color:C.textMuted}}>{r.label}</td>
+                      <td style={{padding:"8px 10px",color:C.textMuted}}>{r.count}</td>
+                      <td style={{padding:"8px 10px",color:r.wins/r.count>=.5?C.accent:C.pink}}>{Math.round((r.wins/r.count)*100)}%</td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",fontWeight:600,color:r.pnl>=0?C.accent:C.pink}}>{r.pnl>=0?"+":""}{r.pnl.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </>)}
+        </div>
+      )}
 
-            {/* Calendar grid */}
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4 }}>
-              {calDays.map((day,i) => {
-                if (!day) return <div key={`pad-${i}`}/>;
-                const isToday = day.iso === new Date().toISOString().split("T")[0];
-                const isSelected = selectedDay?.iso === day.iso;
-                const isWeekend = (i % 7) >= 5;
-                return (
-                  <div key={day.iso} onClick={()=>setSelectedDay(isSelected?null:day)} style={{ minHeight:56, padding:"6px 8px", borderRadius:6, cursor:day.hasData?"pointer":"default", background:isSelected?"rgba(41,168,255,.12)":day.hasData?"rgba(255,255,255,.03)":"transparent", border:`1px solid ${isSelected?"rgba(41,168,255,.35)":isToday?"rgba(255,255,255,.18)":day.hasData?"rgba(255,255,255,.07)":"transparent"}`, transition:"all .15s" }}>
-                    <div style={{ fontSize:11, fontWeight:isToday?600:400, color:isToday?C.accent:isWeekend?C.textDim:C.textMuted, marginBottom:4 }}>{day.d}</div>
-                    {day.hasData && <>
-                      <div style={{ fontSize:11, fontWeight:600, fontFamily:"JetBrains Mono,monospace", color:day.pnl>=0?C.accent:C.pink, lineHeight:1 }}>{day.pnl>=0?"+":""}{day.pnl.toFixed(0)}</div>
-                      <div style={{ fontSize:9, color:C.textDim, marginTop:2 }}>{day.trades.length} trade{day.trades.length>1?"s":""}</div>
+      {/* ════════ TRADE LOG ════════ */}
+      {view==="trades"&&(
+        <div>
+          <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+            {[
+              {label:"Instrument",  val:filterInstr,   set:setFilterInstr,   opts:instruments},
+              {label:"Direction",   val:filterDir,     set:setFilterDir,     opts:["All","Long","Short"]},
+              {label:"Session",     val:filterSession, set:setFilterSession, opts:["All","London","Ny","Asia"]},
+              {label:"Result",      val:filterResult,  set:setFilterResult,  opts:["All","Win","Loss","Breakeven"]},
+            ].map(f=>(
+              <div key={f.label} style={{display:"flex",alignItems:"center",gap:5}}>
+                <span style={{fontSize:11,color:C.textDim}}>{f.label}</span>
+                <select value={f.val} onChange={e=>f.set(e.target.value)} style={{background:"rgba(13,16,24,.8)",border:`1px solid ${C.border}`,borderRadius:4,color:C.text,fontSize:11,padding:"5px 8px"}}>
+                  {f.opts.map(o=><option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+            ))}
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:11,color:C.textDim}}>From</span>
+              <input type="date" value={filterFrom} onChange={e=>setFilterFrom(e.target.value)} style={{background:"rgba(13,16,24,.8)",border:`1px solid ${C.border}`,borderRadius:4,color:C.text,fontSize:11,padding:"4px 8px"}}/>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:11,color:C.textDim}}>To</span>
+              <input type="date" value={filterTo} onChange={e=>setFilterTo(e.target.value)} style={{background:"rgba(13,16,24,.8)",border:`1px solid ${C.border}`,borderRadius:4,color:C.text,fontSize:11,padding:"4px 8px"}}/>
+            </div>
+            {(filterInstr!=="All"||filterDir!=="All"||filterSession!=="All"||filterResult!=="All"||filterFrom||filterTo)&&(
+              <button className="btn bg" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>{setFilterInstr("All");setFilterDir("All");setFilterSession("All");setFilterResult("All");setFilterFrom("");setFilterTo("");}}>Clear</button>
+            )}
+            <span style={{fontSize:11,color:C.textDim,marginLeft:"auto"}}>{filteredTrades.length} trades</span>
+          </div>
+          <div className="mc" style={{padding:0,overflow:"hidden"}}>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead>
+                  <tr style={{background:"rgba(13,16,24,.6)",borderBottom:`1px solid ${C.border}`}}>
+                    <SortTh field="open_time" label="Date"/>
+                    <th style={{padding:"7px 10px",textAlign:"left",fontSize:9,color:C.textDim,fontWeight:500,letterSpacing:".05em",textTransform:"uppercase"}}>Instrument</th>
+                    <th style={{padding:"7px 10px",textAlign:"left",fontSize:9,color:C.textDim,fontWeight:500,letterSpacing:".05em",textTransform:"uppercase"}}>Dir.</th>
+                    <SortTh field="open_price" label="Entry"/>
+                    <th style={{padding:"7px 10px",textAlign:"left",fontSize:9,color:C.textDim,fontWeight:500,letterSpacing:".05em",textTransform:"uppercase"}}>Exit</th>
+                    <SortTh field="volume" label="Lots"/>
+                    <th style={{padding:"7px 10px",textAlign:"left",fontSize:9,color:C.textDim,fontWeight:500,letterSpacing:".05em",textTransform:"uppercase"}}>TF</th>
+                    <th style={{padding:"7px 10px",textAlign:"left",fontSize:9,color:C.textDim,fontWeight:500,letterSpacing:".05em",textTransform:"uppercase"}}>Session</th>
+                    <th style={{padding:"7px 10px",textAlign:"left",fontSize:9,color:C.textDim,fontWeight:500,letterSpacing:".05em",textTransform:"uppercase"}}>R</th>
+                    <SortTh field="profit" label="Net P&L"/>
+                    <th style={{padding:"7px 10px",fontSize:9,color:C.textDim}}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTrades.length===0&&(
+                    <tr><td colSpan={11} style={{padding:"32px",textAlign:"center",color:C.textDim,fontSize:12}}>
+                      {trades.length===0?`No trades yet — click "Add Trade" to log your first trade.`:"No trades match the current filters."}
+                    </td></tr>
+                  )}
+                  {filteredTrades.map(t=>(
+                    <tr key={t.id} style={{borderBottom:`1px solid rgba(255,255,255,.04)`,cursor:"pointer",transition:"background .1s"}}
+                      onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,.02)"}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                      onClick={()=>setDetailTrade(t)}>
+                      <td style={{padding:"8px 10px",color:C.textDim,fontSize:10,fontFamily:"JetBrains Mono,monospace",whiteSpace:"nowrap"}}>{fmtDate(t.open_time)}</td>
+                      <td style={{padding:"8px 10px",fontWeight:600,color:C.text}}>{t.instrument}</td>
+                      <td style={{padding:"8px 10px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:3,background:t.trade_type==="Long"?"rgba(41,168,255,.1)":"rgba(233,30,167,.1)",color:t.trade_type==="Long"?C.accent:C.pink,border:`1px solid ${t.trade_type==="Long"?"rgba(41,168,255,.25)":"rgba(233,30,167,.25)"}`}}>{t.trade_type}</span></td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.textMuted}}>{fmtP(t.open_price)}</td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.textMuted}}>{t.close_price?fmtP(t.close_price):"—"}</td>
+                      <td style={{padding:"8px 10px",color:C.textMuted,fontSize:10}}>{t.volume||"—"}</td>
+                      <td style={{padding:"8px 10px",color:C.textDim,fontSize:10}}>{t.timeframe||"—"}</td>
+                      <td style={{padding:"8px 10px",color:C.textDim,fontSize:10}}>{t.session}</td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.textDim}}>{t.r_multiple?`${t.r_multiple}R`:"—"}</td>
+                      <td style={{padding:"8px 10px",fontWeight:700,fontFamily:"JetBrains Mono,monospace",color:t.profit>=0?C.accent:C.pink,whiteSpace:"nowrap"}}>{t.profit>=0?"+":""}{t.profit.toFixed(2)}</td>
+                      <td style={{padding:"8px 10px"}} onClick={e=>e.stopPropagation()}>
+                        <div style={{display:"flex",gap:4}}>
+                          <button className="btn bg" style={{fontSize:9,padding:"3px 7px"}} onClick={()=>openEdit(t)}>Edit</button>
+                          <button className="btn bg" style={{fontSize:9,padding:"3px 7px",color:C.pink}} onClick={()=>setDeleteId(t.id)}>Del</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════ CALENDAR ════════ */}
+      {view==="calendar"&&(
+        <div>
+          <div className="mc" style={{padding:"14px 18px",marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <button className="btn bg" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>setCalMonth(p=>{const d=new Date(p.y,p.m-1);return{y:d.getFullYear(),m:d.getMonth()};})}>‹</button>
+                <h2 style={{fontSize:16,fontWeight:500,color:C.text}}>{MONTH_NAMES[calMonth.m]} {calMonth.y}</h2>
+                <button className="btn bg" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>setCalMonth(p=>{const d=new Date(p.y,p.m+1);return{y:d.getFullYear(),m:d.getMonth()};})}>›</button>
+                <button className="btn bg" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>{const d=new Date();setCalMonth({y:d.getFullYear(),m:d.getMonth()});}}>Today</button>
+              </div>
+              <span style={{fontSize:12,fontWeight:600,color:monthPnl>=0?C.accent:C.pink,fontFamily:"JetBrains Mono,monospace"}}>Month: {monthPnl>=0?"+":""}{monthPnl.toFixed(2)}</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:4}}>
+              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>(
+                <div key={d} style={{textAlign:"center",fontSize:10,color:C.textDim,fontWeight:600,padding:"4px 0",letterSpacing:".05em"}}>{d}</div>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+              {calDays.map((day,i)=>{
+                if(!day) return <div key={`pad-${i}`}/>;
+                const isToday=day.iso===new Date().toISOString().split("T")[0];
+                const isSelected=selectedDay?.iso===day.iso;
+                return(
+                  <div key={day.iso} onClick={()=>setSelectedDay(isSelected?null:day)}
+                    style={{minHeight:56,padding:"6px 8px",borderRadius:6,cursor:day.hasData?"pointer":"default",background:isSelected?"rgba(41,168,255,.12)":day.hasData?"rgba(255,255,255,.03)":"transparent",border:`1px solid ${isSelected?"rgba(41,168,255,.35)":isToday?"rgba(255,255,255,.18)":day.hasData?"rgba(255,255,255,.07)":"transparent"}`,transition:"all .15s"}}>
+                    <div style={{fontSize:11,fontWeight:isToday?600:400,color:isToday?C.accent:C.textMuted,marginBottom:4}}>{day.d}</div>
+                    {day.hasData&&<>
+                      <div style={{fontSize:11,fontWeight:600,fontFamily:"JetBrains Mono,monospace",color:day.pnl>=0?C.accent:C.pink,lineHeight:1}}>{day.pnl>=0?"+":""}{day.pnl.toFixed(0)}</div>
+                      <div style={{fontSize:9,color:C.textDim,marginTop:2}}>{day.trades.length}T</div>
                     </>}
                   </div>
                 );
               })}
             </div>
           </div>
-
-          {/* Selected day detail */}
-          {selectedDay && selectedDay.hasData && (
-            <div className="mc" style={{ padding:"16px 20px" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+          {selectedDay?.hasData&&(
+            <div className="mc" style={{padding:"16px 20px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
                 <IC n="cal" s={13} c={C.accent}/>
-                <div className="sl" style={{ margin:0 }}>{new Date(selectedDay.iso+"T12:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
-                <span style={{ marginLeft:"auto", fontSize:12, fontWeight:600, color:selectedDay.pnl>=0?C.accent:C.pink, fontFamily:"JetBrains Mono,monospace" }}>{selectedDay.pnl>=0?"+":""}{selectedDay.pnl.toFixed(2)}</span>
+                <div className="sl" style={{margin:0}}>{new Date(selectedDay.iso+"T12:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
+                <span style={{marginLeft:"auto",fontSize:12,fontWeight:600,color:selectedDay.pnl>=0?C.accent:C.pink,fontFamily:"JetBrains Mono,monospace"}}>{selectedDay.pnl>=0?"+":""}{selectedDay.pnl.toFixed(2)}</span>
               </div>
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
-                <thead><tr style={{ borderBottom:`1px solid ${C.border}` }}>
-                  {["Instrument","Type","Entry","Exit","Volume","Session","Duration","Comm.","Net P&L"].map(h=>(
-                    <th key={h} style={{ padding:"5px 8px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, textTransform:"uppercase", letterSpacing:".05em" }}>{h}</th>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
+                  {["Instrument","Direction","Entry","Exit","Lots","Session","Duration","Net P&L"].map(h=>(
+                    <th key={h} style={{padding:"5px 8px",textAlign:"left",fontSize:9,color:C.textDim,fontWeight:500,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
-                  {selectedDay.trades.map(t=>{
-                    const net=t.profit+t.commission;
-                    return (
-                      <tr key={t.id} style={{ borderBottom:`1px solid rgba(255,255,255,.04)` }}>
-                        <td style={{ padding:"7px 8px", fontWeight:600, color:C.text }}>{t.instrument}</td>
-                        <td style={{ padding:"7px 8px" }}><span style={{ fontSize:10, padding:"2px 6px", borderRadius:3, background:t.trade_type==="Long"?"rgba(41,168,255,.1)":"rgba(233,30,167,.1)", color:t.trade_type==="Long"?C.accent:C.pink, border:`1px solid ${t.trade_type==="Long"?"rgba(41,168,255,.25)":"rgba(233,30,167,.25)"}` }}>{t.trade_type}</span></td>
-                        <td style={{ padding:"7px 8px", fontFamily:"JetBrains Mono,monospace", fontSize:10, color:C.textMuted }}>{fmtPrice(t,t.open_price)}</td>
-                        <td style={{ padding:"7px 8px", fontFamily:"JetBrains Mono,monospace", fontSize:10, color:C.textMuted }}>{t.close_price?fmtPrice(t,t.close_price):"—"}</td>
-                        <td style={{ padding:"7px 8px", color:C.textMuted }}>{t.volume}</td>
-                        <td style={{ padding:"7px 8px", color:C.textDim }}>{t.session}</td>
-                        <td style={{ padding:"7px 8px", fontFamily:"JetBrains Mono,monospace", fontSize:10, color:C.textDim }}>{calcDur(t)}</td>
-                        <td style={{ padding:"7px 8px", color:C.pink, fontFamily:"JetBrains Mono,monospace", fontSize:10 }}>{t.commission.toFixed(2)}</td>
-                        <td style={{ padding:"7px 8px", fontWeight:600, fontFamily:"JetBrains Mono,monospace", color:net>=0?C.accent:C.pink }}>{net>=0?"+":""}{net.toFixed(2)}</td>
-                      </tr>
-                    );
-                  })}
+                  {selectedDay.trades.map(t=>(
+                    <tr key={t.id} style={{borderBottom:`1px solid rgba(255,255,255,.04)`,cursor:"pointer"}} onClick={()=>setDetailTrade(t)}>
+                      <td style={{padding:"7px 8px",fontWeight:600,color:C.text}}>{t.instrument}</td>
+                      <td style={{padding:"7px 8px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:3,background:t.trade_type==="Long"?"rgba(41,168,255,.1)":"rgba(233,30,167,.1)",color:t.trade_type==="Long"?C.accent:C.pink,border:`1px solid ${t.trade_type==="Long"?"rgba(41,168,255,.25)":"rgba(233,30,167,.25)"}`}}>{t.trade_type}</span></td>
+                      <td style={{padding:"7px 8px",fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.textMuted}}>{fmtP(t.open_price)}</td>
+                      <td style={{padding:"7px 8px",fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.textMuted}}>{t.close_price?fmtP(t.close_price):"—"}</td>
+                      <td style={{padding:"7px 8px",color:C.textMuted}}>{t.volume}</td>
+                      <td style={{padding:"7px 8px",color:C.textDim}}>{t.session}</td>
+                      <td style={{padding:"7px 8px",fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.textDim}}>{calcDur(t)}</td>
+                      <td style={{padding:"7px 8px",fontWeight:600,fontFamily:"JetBrains Mono,monospace",color:t.profit>=0?C.accent:C.pink}}>{t.profit>=0?"+":""}{t.profit.toFixed(2)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -2956,157 +3133,259 @@ const Journal = ({ setPage, currentTier, user }) => {
         </div>
       )}
 
-      {/* ════════════════════ TRADE LOG ════════════════════ */}
-      {view === "trades" && (
-        <div>
-          {/* Filters */}
-          <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <span style={{ fontSize:11, color:C.textDim }}>Instrument</span>
-              <select value={filterInstr} onChange={e=>setFilterInstr(e.target.value)} style={{ background:"rgba(13,16,24,.8)", border:`1px solid ${C.border}`, borderRadius:4, color:C.text, fontSize:11, padding:"5px 10px" }}>
-                {instruments.map(i=><option key={i} value={i}>{i}</option>)}
-              </select>
-            </div>
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <span style={{ fontSize:11, color:C.textDim }}>Direction</span>
-              <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={{ background:"rgba(13,16,24,.8)", border:`1px solid ${C.border}`, borderRadius:4, color:C.text, fontSize:11, padding:"5px 10px" }}>
-                {["All","Long","Short"].map(t=><option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <span style={{ fontSize:11, color:C.textDim, marginLeft:"auto" }}>{filteredTrades.length} trades</span>
-          </div>
-
-          <div className="mc" style={{ padding:0, overflow:"hidden" }}>
-            <div style={{ overflowX:"auto" }}>
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
-                <thead>
-                  <tr style={{ background:"rgba(13,16,24,.6)", borderBottom:`1px solid ${C.border}` }}>
-                    <SortTh field="open_time" label="Open Time"/>
-                    <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, letterSpacing:".05em", textTransform:"uppercase" }}>Instrument</th>
-                    <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, letterSpacing:".05em", textTransform:"uppercase" }}>Type</th>
-                    <SortTh field="open_price" label="Entry"/>
-                    <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, letterSpacing:".05em", textTransform:"uppercase" }}>Exit</th>
-                    <SortTh field="volume" label="Volume"/>
-                    <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, letterSpacing:".05em", textTransform:"uppercase" }}>Duration</th>
-                    <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, letterSpacing:".05em", textTransform:"uppercase" }}>Session</th>
-                    <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, letterSpacing:".05em", textTransform:"uppercase" }}>Comm.</th>
-                    <SortTh field="profit" label="Net P&L"/>
-                    <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, letterSpacing:".05em", textTransform:"uppercase" }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTrades.map(t => {
-                    const net = t.profit + t.commission;
-                    return (
-                      <tr key={t.id} style={{ borderBottom:`1px solid rgba(255,255,255,.04)`, transition:"background .1s" }}
-                        onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,.02)"}
-                        onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                        <td style={{ padding:"8px 10px", color:C.textDim, fontSize:10, fontFamily:"JetBrains Mono,monospace", whiteSpace:"nowrap" }}>{fmtDate(t.open_time)}</td>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:C.text }}>{t.instrument}</td>
-                        <td style={{ padding:"8px 10px" }}><span style={{ fontSize:10, padding:"2px 6px", borderRadius:3, background:t.trade_type==="Long"?"rgba(41,168,255,.1)":"rgba(233,30,167,.1)", color:t.trade_type==="Long"?C.accent:C.pink, border:`1px solid ${t.trade_type==="Long"?"rgba(41,168,255,.25)":"rgba(233,30,167,.25)"}` }}>{t.trade_type}</span></td>
-                        <td style={{ padding:"8px 10px", fontFamily:"JetBrains Mono,monospace", fontSize:10, color:C.textMuted }}>{fmtPrice(t,t.open_price)}</td>
-                        <td style={{ padding:"8px 10px", fontFamily:"JetBrains Mono,monospace", fontSize:10, color:C.textMuted }}>{t.close_price?fmtPrice(t,t.close_price):"—"}</td>
-                        <td style={{ padding:"8px 10px", color:C.textMuted }}>{t.volume}</td>
-                        <td style={{ padding:"8px 10px", fontFamily:"JetBrains Mono,monospace", fontSize:10, color:C.textDim }}>{calcDur(t)}</td>
-                        <td style={{ padding:"8px 10px", color:C.textDim }}>{t.session}</td>
-                        <td style={{ padding:"8px 10px", fontFamily:"JetBrains Mono,monospace", fontSize:10, color:C.pink }}>{t.commission.toFixed(2)}</td>
-                        <td style={{ padding:"8px 10px", fontWeight:700, fontFamily:"JetBrains Mono,monospace", color:net>=0?C.accent:C.pink }}>{net>=0?"+":""}{net.toFixed(2)}</td>
-                        <td style={{ padding:"8px 10px" }}>
-                          {t.is_open
-                            ? <span style={{ fontSize:10, padding:"2px 6px", borderRadius:3, background:"rgba(41,255,136,.08)", color:"#29ff88", border:"1px solid rgba(41,255,136,.2)" }}>Open</span>
-                            : <span style={{ fontSize:10, padding:"2px 6px", borderRadius:3, background:"rgba(255,255,255,.04)", color:C.textDim, border:"1px solid rgba(255,255,255,.08)" }}>Closed</span>
-                          }
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ════════════════════ IMPORT CSV ════════════════════ */}
-      {view === "import" && (
-        <div style={{ maxWidth:680 }}>
-          {csvStep !== "done" && (
-            <div className="mc" style={{ padding:"24px 28px", textAlign:"center", marginBottom:16 }}>
+      {/* ════════ IMPORT CSV ════════ */}
+      {view==="import"&&(
+        <div style={{maxWidth:680}}>
+          {csvStep!=="done"&&(
+            <div className="mc" style={{padding:"24px 28px",textAlign:"center",marginBottom:16}}>
               <IC n="upload" s={28} c={C.accent}/>
-              <h3 style={{ fontSize:16, fontWeight:500, color:C.text, margin:"12px 0 6px" }}>Import from CSV</h3>
-              <p style={{ fontSize:13, color:C.textMuted, marginBottom:20, lineHeight:1.6 }}>Export your trade history from MT4/MT5, cTrader, Tradovate, FTMO, or any broker as a CSV file and upload it here.</p>
-              <div
-                onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}}
-                onDragOver={e=>{e.preventDefault();setDragOver(true);}}
-                onDragLeave={()=>setDragOver(false)}
-                onClick={()=>fileRef.current?.click()}
-                style={{ border:`2px dashed ${dragOver?"rgba(41,168,255,.5)":"rgba(255,255,255,.12)"}`, borderRadius:8, padding:"28px 20px", cursor:"pointer", background:dragOver?"rgba(41,168,255,.05)":"transparent", transition:"all .2s", marginBottom:16 }}>
+              <h3 style={{fontSize:16,fontWeight:500,color:C.text,margin:"12px 0 6px"}}>Import from CSV</h3>
+              <p style={{fontSize:13,color:C.textMuted,marginBottom:20,lineHeight:1.6}}>Export your trade history from MT4/MT5, cTrader, Tradovate, FTMO, or any broker as a CSV file and upload it here.</p>
+              <div onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}} onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onClick={()=>fileRef.current?.click()}
+                style={{border:`2px dashed ${dragOver?"rgba(41,168,255,.5)":"rgba(255,255,255,.12)"}`,borderRadius:8,padding:"28px 20px",cursor:"pointer",background:dragOver?"rgba(41,168,255,.05)":"transparent",transition:"all .2s",marginBottom:16}}>
                 <IC n="upload" s={20} c={dragOver?C.accent:C.textDim}/>
-                <div style={{ fontSize:13, color:dragOver?C.accent:C.textMuted, marginTop:8 }}>{fileName || "Drop CSV file here or click to browse"}</div>
-                <div style={{ fontSize:11, color:C.textDim, marginTop:4 }}>MT4, MT5, cTrader, Tradovate, FTMO supported</div>
-                <input ref={fileRef} type="file" accept=".csv" style={{ display:"none" }} onChange={e=>handleFile(e.target.files[0])}/>
+                <div style={{fontSize:13,color:dragOver?C.accent:C.textMuted,marginTop:8}}>{fileName||"Drop CSV file here or click to browse"}</div>
+                <div style={{fontSize:11,color:C.textDim,marginTop:4}}>MT4, MT5, cTrader, Tradovate, FTMO supported</div>
+                <input ref={fileRef} type="file" accept=".csv" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
               </div>
-              {fileError  && <div style={{ fontSize:12, color:C.pink,   marginBottom:8 }}>{fileError}</div>}
-              {importMsg  && <div style={{ fontSize:12, color:csvStep==="done"?C.accent:C.pink, marginBottom:8 }}>{importMsg}</div>}
-              {csvStep === "parsing" && <div style={{ fontSize:12, color:C.textMuted }}>Parsing file…</div>}
-              <div style={{ display:"flex", gap:10, justifyContent:"center", marginTop:16, flexWrap:"wrap" }}>
+              {fileError&&<div style={{fontSize:12,color:C.pink,marginBottom:8}}>{fileError}</div>}
+              {importMsg&&<div style={{fontSize:12,color:C.pink,marginBottom:8}}>{importMsg}</div>}
+              {csvStep==="parsing"&&<div style={{fontSize:12,color:C.textMuted}}>Parsing file…</div>}
+              <div style={{display:"flex",gap:10,justifyContent:"center",marginTop:16,flexWrap:"wrap"}}>
                 {["MetaTrader 4/5","cTrader","Tradovate","FTMO","TopStep","MyForexFunds"].map(p=>(
-                  <span key={p} style={{ fontSize:10, padding:"3px 8px", borderRadius:3, background:"rgba(255,255,255,.04)", color:C.textDim, border:"1px solid rgba(255,255,255,.07)" }}>{p}</span>
+                  <span key={p} style={{fontSize:10,padding:"3px 8px",borderRadius:3,background:"rgba(255,255,255,.04)",color:C.textDim,border:"1px solid rgba(255,255,255,.07)"}}>{p}</span>
                 ))}
               </div>
             </div>
           )}
-
-          {/* Preview */}
-          {(csvStep === "preview" || csvStep === "importing") && csvTrades?.length > 0 && (
-            <div className="mc" style={{ padding:"20px 22px" }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+          {(csvStep==="preview"||csvStep==="importing")&&csvTrades?.length>0&&(
+            <div className="mc" style={{padding:"20px 22px"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
                 <div>
-                  <div className="sl" style={{ margin:0 }}>Preview — {csvTrades.length} trades detected</div>
-                  <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>Review before importing. All trades will be added to your journal.</div>
+                  <div className="sl" style={{margin:0}}>Preview — {csvTrades.length} trades detected</div>
+                  <div style={{fontSize:11,color:C.textDim,marginTop:2}}>Review before importing.</div>
                 </div>
-                <button className="btn bp" style={{ opacity: csvStep==="importing"?.6:1 }} onClick={confirmImport} disabled={csvStep==="importing"}>
-                  {csvStep==="importing" ? "Importing…" : `Import ${csvTrades.length} Trades`}
+                <button className="btn bp" style={{opacity:csvStep==="importing"?.6:1}} onClick={confirmImport} disabled={csvStep==="importing"}>
+                  {csvStep==="importing"?"Importing…":`Import ${csvTrades.length} Trades`}
                 </button>
               </div>
-              <div style={{ overflowX:"auto", maxHeight:300, overflowY:"auto" }}>
-                <table style={{ width:"100%", borderCollapse:"collapse" }}>
-                  <thead><tr style={{ background:"rgba(255,255,255,.03)" }}>
+              <div style={{overflowX:"auto",maxHeight:300,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr style={{background:"rgba(255,255,255,.03)"}}>
                     {["Instrument","Type","Size","Open","Close","P&L","Session"].map(h=>(
-                      <th key={h} style={{ padding:"6px 10px", textAlign:"left", fontSize:9, color:C.textDim, letterSpacing:".05em", textTransform:"uppercase" }}>{h}</th>
+                      <th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,color:C.textDim,letterSpacing:".05em",textTransform:"uppercase"}}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
                     {csvTrades.slice(0,20).map((t,i)=>(
-                      <tr key={i} style={{ borderBottom:`1px solid ${C.border}` }}>
-                        <td style={{ padding:"6px 10px", fontSize:11, color:C.text }}>{t.instrument}</td>
-                        <td style={{ padding:"6px 10px", fontSize:11, color:(t.type||"").toLowerCase().includes("buy")?"#29ff88":C.pink }}>{t.type}</td>
-                        <td style={{ padding:"6px 10px", fontSize:11, fontFamily:"JetBrains Mono,monospace" }}>{t.size}</td>
-                        <td style={{ padding:"6px 10px", fontSize:11, fontFamily:"JetBrains Mono,monospace", color:C.textMuted }}>{t.openPrice?.toFixed(5)}</td>
-                        <td style={{ padding:"6px 10px", fontSize:11, fontFamily:"JetBrains Mono,monospace", color:C.textMuted }}>{t.closePrice?.toFixed(5)}</td>
-                        <td style={{ padding:"6px 10px", fontSize:11, fontFamily:"JetBrains Mono,monospace", color:(t.profit||0)>=0?C.accent:C.pink }}>{((t.profit||0)+(t.commission||0)).toFixed(2)}</td>
-                        <td style={{ padding:"6px 10px", fontSize:11, color:C.textDim }}>{t.session || "—"}</td>
+                      <tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
+                        <td style={{padding:"6px 10px",fontSize:11,color:C.text}}>{t.instrument}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,color:(t.type||"").toLowerCase().includes("buy")?"#29ff88":C.pink}}>{t.type}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace"}}>{t.size}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:C.textMuted}}>{t.openPrice?.toFixed(5)}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:C.textMuted}}>{t.closePrice?.toFixed(5)}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:(t.profit||0)>=0?C.accent:C.pink}}>{((t.profit||0)+(t.commission||0)).toFixed(2)}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,color:C.textDim}}>{t.session||"—"}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {csvTrades.length > 20 && <div style={{ fontSize:11, color:C.textDim, padding:"8px 10px", textAlign:"center" }}>+{csvTrades.length-20} more trades…</div>}
+                {csvTrades.length>20&&<div style={{fontSize:11,color:C.textDim,padding:"8px 10px",textAlign:"center"}}>+{csvTrades.length-20} more trades…</div>}
               </div>
             </div>
           )}
-
-          {/* Done */}
-          {csvStep === "done" && (
-            <div className="mc" style={{ padding:"32px 28px", textAlign:"center" }}>
+          {csvStep==="done"&&(
+            <div className="mc" style={{padding:"32px 28px",textAlign:"center"}}>
               <IC n="check" s={32} c={C.accent}/>
-              <h3 style={{ fontSize:16, fontWeight:500, color:C.text, margin:"12px 0 6px" }}>Import Complete</h3>
-              <p style={{ fontSize:13, color:C.textMuted, marginBottom:20 }}>{importMsg}</p>
-              <div style={{ display:"flex", gap:10, justifyContent:"center" }}>
-                <button className="btn bp" onClick={()=>setView("dashboard")}>View Journal</button>
-                <button className="btn bg" onClick={()=>{ setCsvStep("idle"); setCsvTrades(null); setFileName(null); setImportMsg(""); }}>Import Another</button>
+              <h3 style={{fontSize:16,fontWeight:500,color:C.text,margin:"12px 0 6px"}}>Import Complete</h3>
+              <p style={{fontSize:13,color:C.textMuted,marginBottom:20}}>{importMsg}</p>
+              <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+                <button className="btn bp" onClick={()=>setView("overview")}>View Journal</button>
+                <button className="btn bg" onClick={()=>{setCsvStep("idle");setCsvTrades(null);setFileName(null);setImportMsg("");}}>Import Another</button>
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ════════ TRADE DETAIL PANEL ════════ */}
+      {detailTrade&&(
+        <div style={{position:"fixed",top:0,right:0,bottom:0,width:420,background:"rgba(8,10,16,.97)",borderLeft:`1px solid ${C.border}`,zIndex:200,overflowY:"auto",backdropFilter:"blur(12px)"}}>
+          <div style={{padding:"20px 22px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div>
+              <div style={{fontSize:18,fontWeight:700,color:C.text}}>{detailTrade.instrument}</div>
+              <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center"}}>
+                <span style={{fontSize:11,padding:"2px 8px",borderRadius:3,background:detailTrade.trade_type==="Long"?"rgba(41,168,255,.15)":"rgba(233,30,167,.15)",color:detailTrade.trade_type==="Long"?C.accent:C.pink,border:`1px solid ${detailTrade.trade_type==="Long"?"rgba(41,168,255,.3)":"rgba(233,30,167,.3)"}`}}>{detailTrade.trade_type}</span>
+                {detailTrade.is_open&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:3,background:"rgba(41,255,136,.08)",color:"#29ff88",border:"1px solid rgba(41,255,136,.2)"}}>Open</span>}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <button className="btn bg" style={{fontSize:11,padding:"6px 12px"}} onClick={()=>openEdit(detailTrade)}>Edit</button>
+              <button className="btn bg" style={{fontSize:11,padding:"6px 12px",color:C.pink}} onClick={()=>{setDeleteId(detailTrade.id);setDetailTrade(null);}}>Delete</button>
+              <button className="btn bg" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setDetailTrade(null)}>✕</button>
+            </div>
+          </div>
+          <div style={{padding:"20px 22px"}}>
+            <div style={{fontSize:28,fontWeight:700,color:detailTrade.profit>=0?C.accent:C.pink,fontFamily:"JetBrains Mono,monospace",marginBottom:4}}>{detailTrade.profit>=0?"+":""}{detailTrade.profit.toFixed(2)}</div>
+            <div style={{fontSize:11,color:C.textDim,marginBottom:20}}>Net P&L</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
+              {[
+                {l:"Entry Price", v:fmtP(detailTrade.open_price)},
+                {l:"Exit Price",  v:detailTrade.close_price?fmtP(detailTrade.close_price):"—"},
+                {l:"Lot Size",    v:detailTrade.volume||"—"},
+                {l:"R-Multiple",  v:detailTrade.r_multiple?`${detailTrade.r_multiple}R`:"—"},
+                {l:"Stop Loss",   v:detailTrade.stop_loss?fmtP(detailTrade.stop_loss):"—"},
+                {l:"Take Profit", v:detailTrade.take_profit?fmtP(detailTrade.take_profit):"—"},
+                {l:"Session",     v:detailTrade.session},
+                {l:"Timeframe",   v:detailTrade.timeframe||"—"},
+                {l:"Duration",    v:calcDur(detailTrade)},
+                {l:"Commission",  v:detailTrade.commission?.toFixed(2)||"0.00"},
+                {l:"Open Time",   v:fmtDate(detailTrade.open_time)},
+                {l:"Close Time",  v:fmtDate(detailTrade.close_time)},
+              ].map(r=>(
+                <div key={r.l} style={{background:"rgba(255,255,255,.03)",borderRadius:6,padding:"10px 12px"}}>
+                  <div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",marginBottom:4}}>{r.l}</div>
+                  <div style={{fontSize:13,color:C.textMuted,fontFamily:"JetBrains Mono,monospace"}}>{r.v}</div>
+                </div>
+              ))}
+            </div>
+            {detailTrade.emotional_state&&<div style={{marginBottom:12}}><div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",marginBottom:4}}>Emotional State</div><div style={{fontSize:12,color:C.textMuted,textTransform:"capitalize"}}>{detailTrade.emotional_state}</div></div>}
+            {detailTrade.category&&<div style={{marginBottom:12}}><div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",marginBottom:4}}>Category</div><div style={{fontSize:12,color:C.textMuted}}>{detailTrade.category}</div></div>}
+            {detailTrade.tags?.length>0&&(
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",marginBottom:6}}>Tags</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {(Array.isArray(detailTrade.tags)?detailTrade.tags:[detailTrade.tags]).filter(Boolean).map(tag=>(
+                    <span key={tag} style={{fontSize:10,padding:"3px 8px",borderRadius:3,background:"rgba(41,168,255,.08)",color:C.accent,border:"1px solid rgba(41,168,255,.2)"}}>{tag}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {detailTrade.thesis&&<div style={{marginBottom:12}}><div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",marginBottom:4}}>Thesis</div><div style={{fontSize:12,color:C.textMuted,lineHeight:1.6,background:"rgba(255,255,255,.03)",borderRadius:6,padding:"10px 12px"}}>{detailTrade.thesis}</div></div>}
+            {detailTrade.notes&&<div style={{marginBottom:12}}><div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",marginBottom:4}}>Notes</div><div style={{fontSize:12,color:C.textMuted,lineHeight:1.6,background:"rgba(255,255,255,.03)",borderRadius:6,padding:"10px 12px"}}>{detailTrade.notes}</div></div>}
+            {detailTrade.account_name&&<div style={{marginBottom:12}}><div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",marginBottom:4}}>Account</div><div style={{fontSize:12,color:C.textMuted}}>{detailTrade.account_name}</div></div>}
+          </div>
+        </div>
+      )}
+
+      {/* ════════ ADD / EDIT MODAL ════════ */}
+      {formOpen&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}} onClick={()=>setFormOpen(false)}>
+          <div style={{background:"rgba(13,16,24,.98)",border:`1px solid ${C.border}`,borderRadius:10,padding:"24px 28px",width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+              <h3 style={{fontSize:16,fontWeight:600,color:C.text,margin:0}}>{formMode==="add"?"Add Trade":"Edit Trade"}</h3>
+              <button className="btn bg" style={{fontSize:12,padding:"5px 10px"}} onClick={()=>setFormOpen(false)}>✕</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              {[
+                {col:"1/-1",label:"Instrument *",key:"instrument",type:"text",placeholder:"e.g. EURUSD, XAUUSD, NAS100"},
+              ].map(f=>(
+                <div key={f.key} style={{gridColumn:f.col}}>
+                  <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>{f.label}</label>
+                  <input value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} placeholder={f.placeholder}
+                    style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px",boxSizing:"border-box"}}/>
+                </div>
+              ))}
+              <div>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Direction *</label>
+                <select value={form.direction} onChange={e=>setForm(p=>({...p,direction:e.target.value}))} style={{width:"100%",background:"rgba(13,16,24,.9)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px"}}>
+                  <option value="long">Long</option><option value="short">Short</option>
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Lot Size</label>
+                <input type="number" step="0.01" value={form.lot_size} onChange={e=>setForm(p=>({...p,lot_size:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px",boxSizing:"border-box"}}/>
+              </div>
+              {[
+                {label:"Entry Price *",key:"entry_price"},{label:"Exit Price",key:"exit_price"},
+                {label:"Net P&L ($)",key:"net_pl"},{label:"Commission ($)",key:"commission"},
+                {label:"Stop Loss",key:"stop_loss"},{label:"Take Profit",key:"take_profit"},
+                {label:"R-Multiple",key:"r_multiple",placeholder:"e.g. 2.5"},
+              ].map(f=>(
+                <div key={f.key}>
+                  <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>{f.label}</label>
+                  <input type="number" step="any" value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} placeholder={f.placeholder}
+                    style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px",boxSizing:"border-box"}}/>
+                </div>
+              ))}
+              <div>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Session</label>
+                <select value={form.session_tag} onChange={e=>setForm(p=>({...p,session_tag:e.target.value}))} style={{width:"100%",background:"rgba(13,16,24,.9)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px"}}>
+                  <option value="london">London</option><option value="ny">NY</option><option value="asia">Asia</option><option value="ny_london">NY/London</option>
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Timeframe</label>
+                <select value={form.timeframe} onChange={e=>setForm(p=>({...p,timeframe:e.target.value}))} style={{width:"100%",background:"rgba(13,16,24,.9)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px"}}>
+                  {["1m","3m","5m","15m","30m","1h","4h","1d","1w"].map(tf=><option key={tf} value={tf}>{tf}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Open Time</label>
+                <input type="datetime-local" value={form.opened_at} onChange={e=>setForm(p=>({...p,opened_at:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Close Time</label>
+                <input type="datetime-local" value={form.closed_at} onChange={e=>setForm(p=>({...p,closed_at:e.target.value}))} style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Emotional State</label>
+                <select value={form.emotional_state} onChange={e=>setForm(p=>({...p,emotional_state:e.target.value}))} style={{width:"100%",background:"rgba(13,16,24,.9)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px"}}>
+                  <option value="">— Select —</option>
+                  {["Calm","Confident","Anxious","Fearful","Greedy","FOMO","Disciplined","Impulsive","Neutral"].map(s=><option key={s} value={s.toLowerCase()}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Category / Setup</label>
+                <input value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))} placeholder="e.g. Breakout, Mean Reversion"
+                  style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{gridColumn:"1/-1"}}>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Tags (comma separated)</label>
+                <input value={form.tags} onChange={e=>setForm(p=>({...p,tags:e.target.value}))} placeholder="e.g. ICT, SMC, supply zone"
+                  style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{gridColumn:"1/-1"}}>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Account Name</label>
+                <input value={form.account_name} onChange={e=>setForm(p=>({...p,account_name:e.target.value}))} placeholder="e.g. FTMO Challenge, Live Account 1"
+                  style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{gridColumn:"1/-1"}}>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Trade Thesis</label>
+                <textarea value={form.thesis} onChange={e=>setForm(p=>({...p,thesis:e.target.value}))} rows={3} placeholder="Why did you take this trade? What was your reasoning?"
+                  style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px",resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{gridColumn:"1/-1"}}>
+                <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Post-Trade Notes</label>
+                <textarea value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} rows={3} placeholder="What did you learn? What went well or wrong?"
+                  style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px",resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+            {formErr&&<div style={{fontSize:12,color:C.pink,marginTop:12}}>{formErr}</div>}
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+              <button className="btn bg" style={{padding:"8px 18px"}} onClick={()=>setFormOpen(false)}>Cancel</button>
+              <button className="btn bp" style={{padding:"8px 18px",opacity:formSaving?.6:1}} onClick={saveForm} disabled={formSaving}>
+                {formSaving?"Saving…":formMode==="add"?"Add Trade":"Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════ DELETE CONFIRM ════════ */}
+      {deleteId&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:310,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
+          <div style={{background:"rgba(13,16,24,.98)",border:`1px solid rgba(233,30,167,.3)`,borderRadius:10,padding:"28px 32px",maxWidth:380,textAlign:"center"}}>
+            <IC n="warning" s={28} c={C.pink}/>
+            <h3 style={{fontSize:16,fontWeight:600,color:C.text,margin:"12px 0 8px"}}>Delete Trade?</h3>
+            <p style={{fontSize:13,color:C.textMuted,marginBottom:20}}>This action cannot be undone.</p>
+            <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+              <button className="btn bg" style={{padding:"8px 18px"}} onClick={()=>setDeleteId(null)}>Cancel</button>
+              <button className="btn bg" style={{padding:"8px 18px",color:C.pink,borderColor:"rgba(233,30,167,.3)",opacity:deleting?.6:1}} onClick={deleteTrade} disabled={deleting}>
+                {deleting?"Deleting…":"Delete Trade"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
