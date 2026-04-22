@@ -445,7 +445,7 @@ const Login = ({ onLogin }) => {
         setError(regData.error?.message || "Something went wrong. Please try again.");
         setStep(1);
       }
-    } catch { setError("Unable to connect. Please try again."); setStep(1); }
+    } catch (err) { setError(err?.message || "Unable to connect. Please try again."); setStep(1); }
     finally { setLoading(false); }
   };
 
