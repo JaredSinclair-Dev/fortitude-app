@@ -1436,7 +1436,7 @@ const GlobalMarketPulse = () => {
           <IC n="globe" s={13} c={C.accent}/>
           <span style={{ fontSize:11, fontWeight:600, color:C.text, letterSpacing:".08em", textTransform:"uppercase" }}>Global Market Sessions</span>
           {overlap && <span style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:"rgba(41,168,255,.08)", color:C.accent, border:"1px solid rgba(41,168,255,.2)", fontWeight:600 }}>{MARKETS.filter(m=>mktOpen(m)).map(m=>m.name).join(" + ")} Overlap</span>}
-          {!fxWknd && !overlap && <div style={{ display:"flex", alignItems:"center", gap:5 }}><div style={{ width:5,height:5,borderRadius:"50%",background:"#29ff88",boxShadow:"0 0 5px #29ff88"}}/><span style={{ fontSize:10, color:C.textDim }}>Live</span></div>}
+          {!fxWknd && !overlap && <div style={{ display:"flex", alignItems:"center", gap:5 }}><div style={{ width:5,height:5,borderRadius:"50%",background:"#29a8ff",boxShadow:"0 0 5px #29a8ff"}}/><span style={{ fontSize:10, color:C.textDim }}>Live</span></div>}
           {fxWknd && <span style={{ fontSize:10, padding:"2px 7px", borderRadius:3, background:"rgba(255,255,255,.04)", color:C.textDim, border:"1px solid rgba(255,255,255,.06)" }}>FX Closed — Weekend</span>}
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -1562,8 +1562,8 @@ const QuantIntelWidget = ({ currentTier, setPage }) => {
           <span style={{ fontSize:11, fontWeight:600, color:C.text, letterSpacing:".08em", textTransform:"uppercase" }}>Quant Intelligence</span>
           {isElite
             ? <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                <div style={{ width:6,height:6,borderRadius:"50%",background:"#29ff88",boxShadow:"0 0 6px #29ff88",opacity:pulseOn?1:.3,transition:"opacity .4s"}}/>
-                <span style={{ fontSize:10, color:"#29ff88" }}>Live</span>
+                <div style={{ width:6,height:6,borderRadius:"50%",background:"#29a8ff",boxShadow:"0 0 6px #29a8ff",opacity:pulseOn?1:.3,transition:"opacity .4s"}}/>
+                <span style={{ fontSize:10, color:"#29a8ff" }}>Live</span>
               </div>
             : <span style={{ fontSize:10, padding:"2px 7px", borderRadius:3, background:"rgba(233,30,167,.1)", color:C.pink, border:"1px solid rgba(233,30,167,.25)", fontWeight:600 }}>ELITE</span>
           }
@@ -1799,7 +1799,7 @@ const LivePriceTicker = () => {
       <div style={{ display:"flex", alignItems:"center", overflowX:"auto", scrollbarWidth:"none" }}>
         {/* Label */}
         <div style={{ padding:"8px 14px", borderRight:`1px solid ${C.border}`, flexShrink:0, display:"flex", alignItems:"center", gap:6 }}>
-          <div style={{ width:5,height:5,borderRadius:"50%",background:error?"#ff6b35":"#29ff88",boxShadow:`0 0 4px ${error?"#ff6b35":"#29ff88"}`}}/>
+          <div style={{ width:5,height:5,borderRadius:"50%",background:error?"#e91ea7":"#29a8ff",boxShadow:`0 0 4px ${error?"#e91ea7":"#29a8ff"}`}}/>
           <span style={{ fontSize:9, fontWeight:600, color:C.textDim, letterSpacing:".07em", textTransform:"uppercase", whiteSpace:"nowrap" }}>Live Prices</span>
         </div>
         {INSTRUMENTS.map(inst => {
@@ -1989,7 +1989,7 @@ const Dashboard = ({ setPage, currentTier, user }) => {
                     <IC n="journal" s={13} c={C.accent}/>
                     <div className="sl" style={{ margin:0 }}>Trading Journal</div>
                     {conn && <div style={{ display:"flex", alignItems:"center", gap:5, padding:"2px 8px", borderRadius:3, background:"rgba(41,168,255,.06)", border:"1px solid rgba(41,168,255,.15)" }}>
-                      <div style={{ width:5,height:5,borderRadius:"50%",background:conn.sync_status==="live"?"#29ff88":"#ff6b35",boxShadow:`0 0 4px ${conn.sync_status==="live"?"#29ff88":"#ff6b35"}`}}/>
+                      <div style={{ width:5,height:5,borderRadius:"50%",background:conn.sync_status==="live"?"#29a8ff":"#e91ea7",boxShadow:`0 0 4px ${conn.sync_status==="live"?"#29a8ff":"#e91ea7"}`}}/>
                       <span style={{ fontSize:9, color:C.textDim }}>{conn.display_name}</span>
                     </div>}
                   </div>
@@ -2683,7 +2683,7 @@ const BrokerAccounts = ({ setPage }) => {
   };
 
   const BK_LABEL = { ctrader:"cTrader", mt4:"MT4", mt5:"MT5" };
-  const BK_COLOR = { ctrader:C.accent, mt4:"#f59e0b", mt5:"#10b981" };
+  const BK_COLOR = { ctrader:C.accent, mt4:C.accent, mt5:C.accent };
 
   return (
     <div className="fi">
@@ -2746,8 +2746,8 @@ const BrokerAccounts = ({ setPage }) => {
                 </div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <div style={{width:7,height:7,borderRadius:"50%",background:conn.is_active?"#29ff88":C.pink,boxShadow:conn.is_active?"0 0 6px #29ff8880":"none"}}/>
-                <span style={{fontSize:11,color:conn.is_active?"#29ff88":C.pink}}>{conn.is_active?"Active":"Inactive"}</span>
+                <div style={{width:7,height:7,borderRadius:"50%",background:conn.is_active?"#29a8ff":C.pink,boxShadow:conn.is_active?"0 0 6px #29a8ff80":"none"}}/>
+                <span style={{fontSize:11,color:conn.is_active?"#29a8ff":C.pink}}>{conn.is_active?"Active":"Inactive"}</span>
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {conn.broker_type==="ctrader"&&(
@@ -2814,8 +2814,8 @@ const BrokerAccounts = ({ setPage }) => {
                 <p style={{fontSize:13,color:C.textMuted,marginBottom:4}}>Which platform do you trade on?</p>
                 {[
                   {id:"ctrader",label:"cTrader",     desc:"Pepperstone, IC Markets, FunderPro, and most cTrader prop firms", color:C.accent},
-                  {id:"mt4",    label:"MetaTrader 4", desc:"FTMO MT4, legacy forex brokers, most pre-2022 prop firms",         color:"#f59e0b"},
-                  {id:"mt5",    label:"MetaTrader 5", desc:"Newer prop firms, futures + forex, equity brokers",                color:"#10b981"},
+                  {id:"mt4",    label:"MetaTrader 4", desc:"FTMO MT4, legacy forex brokers, most pre-2022 prop firms",         color:C.accent},
+                  {id:"mt5",    label:"MetaTrader 5", desc:"Newer prop firms, futures + forex, equity brokers",                color:C.accent},
                 ].map(b=>(
                   <div key={b.id} onClick={()=>{ setBrokerType(b.id); setAddStep(b.id==="ctrader"?"ct_oauth":"mt_setup_label"); }}
                     style={{padding:"14px 16px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,cursor:"pointer",transition:"all .2s",display:"flex",alignItems:"center",gap:14}}
@@ -2852,8 +2852,8 @@ const BrokerAccounts = ({ setPage }) => {
             {/* Step: MT4/MT5 credentials display */}
             {addStep==="mt_setup"&&mtConn&&(
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
-                <div style={{padding:"12px 14px",background:"rgba(41,255,136,.06)",border:"1px solid rgba(41,255,136,.2)",borderRadius:7}}>
-                  <div style={{fontSize:12,fontWeight:600,color:"#29ff88",marginBottom:2}}>Connection created</div>
+                <div style={{padding:"12px 14px",background:"rgba(41,168,255,.06)",border:"1px solid rgba(41,168,255,.2)",borderRadius:7}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"#29a8ff",marginBottom:2}}>Connection created</div>
                   <div style={{fontSize:11,color:C.textDim}}>Paste these credentials into the EA, then install it in your terminal.</div>
                 </div>
                 {[{label:"Connection ID",value:mtConn.connectionId,key:"connId"},{label:"Webhook Secret",value:mtConn.webhookSecret,key:"secret"}].map(f=>(
@@ -2862,7 +2862,7 @@ const BrokerAccounts = ({ setPage }) => {
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <input readOnly value={f.value} className="inp" style={{flex:1,fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.accent}}/>
                       <button className="btn bg" style={{padding:"7px 10px",fontSize:11,flexShrink:0,display:"flex",alignItems:"center",gap:4}} onClick={()=>copyText(f.value,f.key)}>
-                        <IC n={copied===f.key?"check":"copy"} s={12} c={copied===f.key?"#29ff88":C.textMuted}/>{copied===f.key?"Copied":"Copy"}
+                        <IC n={copied===f.key?"check":"copy"} s={12} c={copied===f.key?"#29a8ff":C.textMuted}/>{copied===f.key?"Copied":"Copy"}
                       </button>
                     </div>
                   </div>
@@ -2934,8 +2934,8 @@ const BrokerAccounts = ({ setPage }) => {
             {/* Step: done */}
             {addStep==="done"&&(
               <div style={{textAlign:"center",padding:"20px 0"}}>
-                <div style={{width:52,height:52,borderRadius:"50%",background:"rgba(41,255,136,.1)",border:"1px solid rgba(41,255,136,.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
-                  <IC n="check" s={24} c="#29ff88"/>
+                <div style={{width:52,height:52,borderRadius:"50%",background:"rgba(41,168,255,.1)",border:"1px solid rgba(41,168,255,.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+                  <IC n="check" s={24} c="#29a8ff"/>
                 </div>
                 <div style={{fontSize:16,fontWeight:600,color:C.text,marginBottom:8}}>Account Connected</div>
                 <div style={{fontSize:13,color:C.textMuted,marginBottom:24,lineHeight:1.7,maxWidth:360,margin:"0 auto 24px"}}>
@@ -2964,7 +2964,7 @@ const BrokerAccounts = ({ setPage }) => {
               </button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <div style={{padding:"12px 14px",background:"rgba(41,255,136,.06)",border:"1px solid rgba(41,255,136,.2)",borderRadius:7}}>
+              <div style={{padding:"12px 14px",background:"rgba(41,168,255,.06)",border:"1px solid rgba(41,168,255,.2)",borderRadius:7}}>
                 <div style={{fontSize:11,color:C.textDim}}>Paste these credentials into the EA file, then install it in your terminal.</div>
               </div>
               {[{label:"Connection ID",value:setupConn.id,key:"sid"},{label:"Webhook Secret",value:setupConn.webhook_secret,key:"ssec"}].map(f=>(
@@ -2973,7 +2973,7 @@ const BrokerAccounts = ({ setPage }) => {
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
                     <input readOnly value={f.value||""} className="inp" style={{flex:1,fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.accent}}/>
                     <button className="btn bg" style={{padding:"7px 10px",fontSize:11,flexShrink:0,display:"flex",alignItems:"center",gap:4}} onClick={()=>copyText(f.value,f.key)}>
-                      <IC n={copied===f.key?"check":"copy"} s={12} c={copied===f.key?"#29ff88":C.textMuted}/>{copied===f.key?"Copied":"Copy"}
+                      <IC n={copied===f.key?"check":"copy"} s={12} c={copied===f.key?"#29a8ff":C.textMuted}/>{copied===f.key?"Copied":"Copy"}
                     </button>
                   </div>
                 </div>
@@ -3263,7 +3263,7 @@ const Journal = ({ setPage, currentTier, user }) => {
         ))}
         {openTrades.length>0&&(
           <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,paddingRight:4}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:"#29ff88",boxShadow:"0 0 5px #29ff88"}}/>
+            <div style={{width:6,height:6,borderRadius:"50%",background:"#29a8ff",boxShadow:"0 0 5px #29a8ff"}}/>
             <span style={{fontSize:11,color:C.textDim}}>{openTrades.length} open</span>
           </div>
         )}
@@ -3322,10 +3322,10 @@ const Journal = ({ setPage, currentTier, user }) => {
             })():<div style={{height:100,display:"flex",alignItems:"center",justifyContent:"center",color:C.textDim,fontSize:12}}>No closed trades yet — add your first trade to see your equity curve.</div>}
           </div>
           {openTrades.length>0&&(
-            <div className="mc" style={{padding:"16px 20px",borderColor:"rgba(41,255,136,.15)"}}>
+            <div className="mc" style={{padding:"16px 20px",borderColor:"rgba(41,168,255,.15)"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-                <div style={{width:6,height:6,borderRadius:"50%",background:"#29ff88",boxShadow:"0 0 5px #29ff88"}}/>
-                <div className="sl" style={{margin:0,color:"#29ff88"}}>Open Positions</div>
+                <div style={{width:6,height:6,borderRadius:"50%",background:"#29a8ff",boxShadow:"0 0 5px #29a8ff"}}/>
+                <div className="sl" style={{margin:0,color:"#29a8ff"}}>Open Positions</div>
               </div>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
@@ -3536,7 +3536,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                       <td style={{padding:"8px 10px",color:C.textDim,fontSize:10}}>{t.timeframe||"—"}</td>
                       <td style={{padding:"8px 10px",color:C.textDim,fontSize:10}}>{t.session}</td>
                       <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.textDim}}>{t.r_multiple?`${t.r_multiple}R`:"—"}</td>
-                      <td style={{padding:"8px 10px",fontWeight:700,fontFamily:"JetBrains Mono,monospace",color:t.profit>=0?C.accent:C.pink,whiteSpace:"nowrap"}}>{t.profit>=0?"+":""}{t.profit.toFixed(2)}</td>
+                      <td style={{padding:"8px 10px",fontWeight:700,fontFamily:"JetBrains Mono,monospace",color:t.profit>0?C.accent:t.profit<0?C.pink:C.text,whiteSpace:"nowrap"}}>{t.profit>0?"+":""}{t.profit.toFixed(2)}</td>
                       <td style={{padding:"8px 10px"}} onClick={e=>e.stopPropagation()}>
                         <div style={{display:"flex",gap:4}}>
                           <button className="btn bg" style={{fontSize:9,padding:"3px 7px"}} onClick={()=>openEdit(t)}>Edit</button>
@@ -3611,7 +3611,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                       <td style={{padding:"7px 8px",color:C.textMuted}}>{t.volume}</td>
                       <td style={{padding:"7px 8px",color:C.textDim}}>{t.session}</td>
                       <td style={{padding:"7px 8px",fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.textDim}}>{calcDur(t)}</td>
-                      <td style={{padding:"7px 8px",fontWeight:600,fontFamily:"JetBrains Mono,monospace",color:t.profit>=0?C.accent:C.pink}}>{t.profit>=0?"+":""}{t.profit.toFixed(2)}</td>
+                      <td style={{padding:"7px 8px",fontWeight:600,fontFamily:"JetBrains Mono,monospace",color:t.profit>0?C.accent:t.profit<0?C.pink:C.text}}>{t.profit>0?"+":""}{t.profit.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -3668,11 +3668,11 @@ const Journal = ({ setPage, currentTier, user }) => {
                     {csvTrades.slice(0,20).map((t,i)=>(
                       <tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
                         <td style={{padding:"6px 10px",fontSize:11,color:C.text}}>{t.instrument}</td>
-                        <td style={{padding:"6px 10px",fontSize:11,color:(t.type||"").toLowerCase().includes("buy")?"#29ff88":C.pink}}>{t.type}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,color:(t.type||"").toLowerCase().includes("buy")?"#29a8ff":C.pink}}>{t.type}</td>
                         <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace"}}>{t.size}</td>
                         <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:C.textMuted}}>{t.openPrice?.toFixed(5)}</td>
                         <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:C.textMuted}}>{t.closePrice?.toFixed(5)}</td>
-                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:(t.profit||0)>=0?C.accent:C.pink}}>{((t.profit||0)+(t.commission||0)).toFixed(2)}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:(t.profit||0)>0?C.accent:(t.profit||0)<0?C.pink:C.text}}>{((t.profit||0)+(t.commission||0)).toFixed(2)}</td>
                         <td style={{padding:"6px 10px",fontSize:11,color:C.textDim}}>{t.session||"—"}</td>
                       </tr>
                     ))}
@@ -3704,7 +3704,7 @@ const Journal = ({ setPage, currentTier, user }) => {
               <div style={{fontSize:18,fontWeight:700,color:C.text}}>{detailTrade.instrument}</div>
               <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center"}}>
                 <span style={{fontSize:11,padding:"2px 8px",borderRadius:3,background:detailTrade.trade_type==="Long"?"rgba(41,168,255,.15)":"rgba(233,30,167,.15)",color:detailTrade.trade_type==="Long"?C.accent:C.pink,border:`1px solid ${detailTrade.trade_type==="Long"?"rgba(41,168,255,.3)":"rgba(233,30,167,.3)"}`}}>{detailTrade.trade_type}</span>
-                {detailTrade.is_open&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:3,background:"rgba(41,255,136,.08)",color:"#29ff88",border:"1px solid rgba(41,255,136,.2)"}}>Open</span>}
+                {detailTrade.is_open&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:3,background:"rgba(41,168,255,.08)",color:"#29a8ff",border:"1px solid rgba(41,168,255,.2)"}}>Open</span>}
               </div>
             </div>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -3714,7 +3714,7 @@ const Journal = ({ setPage, currentTier, user }) => {
             </div>
           </div>
           <div style={{padding:"20px 22px"}}>
-            <div style={{fontSize:28,fontWeight:700,color:detailTrade.profit>=0?C.accent:C.pink,fontFamily:"JetBrains Mono,monospace",marginBottom:4}}>{detailTrade.profit>=0?"+":""}{detailTrade.profit.toFixed(2)}</div>
+            <div style={{fontSize:28,fontWeight:700,color:detailTrade.profit>0?C.accent:detailTrade.profit<0?C.pink:C.text,fontFamily:"JetBrains Mono,monospace",marginBottom:4}}>{detailTrade.profit>0?"+":""}{detailTrade.profit.toFixed(2)}</div>
             <div style={{fontSize:11,color:C.textDim,marginBottom:20}}>Net P&L</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
               {[
@@ -10083,7 +10083,7 @@ const REGIME_META = {
   "Risk-On":      { color:"#29a8ff", bg:"rgba(41,168,255,.1)",  icon:"risk_on",    label:"Risk-On"      },
   "Risk-Off":     { color:"#e91ea7", bg:"rgba(233,30,167,.1)",  icon:"risk_off",   label:"Risk-Off"     },
   "Deflationary": { color:"#d4af37", bg:"rgba(212,175,55,.1)",  icon:"deflation_r",label:"Deflationary" },
-  "Inflationary": { color:"#ff6b35", bg:"rgba(255,107,53,.1)",  icon:"inflation_r",label:"Inflationary" },
+  "Inflationary": { color:"#e91ea7", bg:"rgba(255,107,53,.1)",  icon:"inflation_r",label:"Inflationary" },
 };
 
 const QuantResearchAnalyst = ({ currentTier, setPage }) => {
@@ -10208,8 +10208,8 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
   const cats = ["All",...new Set(EVENTS_DATA.map(e => e.category))].slice(0,6);
   const filtered = EVENTS_DATA.filter(e => (filterCat === "All" || e.category === filterCat) && e.impactScore >= minScore);
 
-  const statusColor = s => ({ Breaking:"#e91ea7", Confirmed:"#29a8ff", Developing:"#d4af37", Conflicting:"#ff6b35" }[s] || "#7a8fa8");
-  const scoreColor  = s => s >= 9 ? "#e91ea7" : s >= 7 ? "#ff6b35" : s >= 4 ? "#d4af37" : "#7a8fa8";
+  const statusColor = s => ({ Breaking:"#e91ea7", Confirmed:"#29a8ff", Developing:"#d4af37", Conflicting:"#e91ea7" }[s] || "#7a8fa8");
+  const scoreColor  = s => s >= 9 ? "#e91ea7" : s >= 7 ? "#e91ea7" : s >= 4 ? "#d4af37" : "#7a8fa8";
   const biasIcon    = b => b > 0 ? "↑" : b < 0 ? "↓" : "→";
   const biasColor   = b => b > 0 ? C.accent : b < 0 ? C.pink : C.textDim;
   const fmtTime     = ts => { const d = new Date(ts); return d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}) + " · " + d.toLocaleDateString("en-GB",{day:"2-digit",month:"short"}); };
@@ -10313,7 +10313,7 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
             ))}
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-            <div style={{ width:6, height:6, borderRadius:"50%", background:"#29ff88", boxShadow:"0 0 6px #29ff88" }}/>
+            <div style={{ width:6, height:6, borderRadius:"50%", background:"#29a8ff", boxShadow:"0 0 6px #29a8ff" }}/>
             <span style={{ fontSize:11, color:C.textDim }}>Live · {lastUpdate.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</span>
           </div>
         </div>
@@ -10324,7 +10324,7 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
         {[
           { icon:"feed", label:"Active Events",  value:SAMPLE_EVENTS.length,                                    color:C.accent },
           { icon:"breaking", label:"Critical (9-10)", value:SAMPLE_EVENTS.filter(e=>e.impactScore>=9).length,        color:"#e91ea7" },
-          { icon:"alert", label:"High (7-8)",      value:SAMPLE_EVENTS.filter(e=>e.impactScore>=7&&e.impactScore<9).length, color:"#ff6b35" },
+          { icon:"alert", label:"High (7-8)",      value:SAMPLE_EVENTS.filter(e=>e.impactScore>=7&&e.impactScore<9).length, color:"#e91ea7" },
           { icon:"narrative", label:"Narratives",      value:NARRATIVES.length,                                       color:C.accent },
         ].map(s => (
           <div key={s.label} style={{ textAlign:"center", padding:"12px 8px", background:"rgba(13,16,24,.7)", border:`1px solid rgba(255,255,255,.06)`, borderRadius:8 }}>
@@ -10632,7 +10632,7 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
           {[
             { icon:"morning", title:"Morning Macro Brief", time:"07:00 GMT · Today", type:"Daily", color:C.accent,
               preview:"Fed minutes dominate the macro landscape. USD well-supported across the board. Gold under pressure from higher real rates. Key watch: CPI next week and PCE end of month.", tags:["Monetary Policy","USD","Gold"] },
-            { icon:"feed", title:"Intraday Update",     time:"13:30 GMT · Today", type:"Intraday", color:"#ff6b35",
+            { icon:"feed", title:"Intraday Update",     time:"13:30 GMT · Today", type:"Intraday", color:"#e91ea7",
               preview:"Red Sea tensions escalating — oil risk premium building fast. Shipping cost indices spiking. Watch for inflation secondary effects on ECB timeline.", tags:["Geopolitical","Oil","Inflation"] },
             { icon:"weekly", title:"Weekly Narrative Report — W12", time:"Friday · This Week", type:"Weekly", color:"#d4af37",
               preview:"BOJ pivot risk, sticky inflation, and geopolitical premium are the dominant themes. Gold net positive on the week. USD complex — hawkish Fed vs global risk-off creating crosscurrents.", tags:["Weekly","All Assets","Macro"] },
@@ -11006,9 +11006,10 @@ export default function App() {
 
   const NAV_GROUPS = [
     { label: "Trading", items: [
-      { id:"dashboard",       label:"Dashboard",        icon:"dashboard" },
-      { id:"journal",         label:"Journal",          icon:"journal"   },
-      { id:"broker_accounts", label:"Connected Accounts",icon:"broker"   },
+      { id:"dashboard",       label:"Dashboard",         icon:"dashboard" },
+      { id:"journal",         label:"Journal",           icon:"journal"   },
+      { id:"broker_accounts", label:"Connected Accounts", icon:"broker"   },
+      { id:"calendar",        label:"Economic Calendar",  icon:"cal"      },
     ]},
     { label: "Intelligence", items: [
       { id:"intelligence", label:"Market Intel",    icon:"intel"  },
@@ -11019,7 +11020,6 @@ export default function App() {
     { label: "Coaching", items: [
       { id:"coach",     label:"Performance Coach", icon:"coach" },
       { id:"education", label:"Education",         icon:"edu"   },
-      { id:"calendar",  label:"Calendar",          icon:"cal"   },
     ]},
     { label: "Community", items: [
       { id:"community", label:"Community", icon:"comm" },
