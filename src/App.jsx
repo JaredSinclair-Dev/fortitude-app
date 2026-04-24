@@ -2651,6 +2651,7 @@ const BrokerAccounts = ({ setPage }) => {
       if (d.success) {
         setMtConn(d.data);
         setConnections(prev => [...prev, { id: d.data.connectionId, broker_type: brokerType, account_label: accountLabel || `${(brokerType||"").toUpperCase()} Account`, is_active: true, last_synced_at: null, created_at: new Date().toISOString() }]);
+        setAddStep("mt_setup");
       } else setErr(d.error?.message || "Failed to create connection");
     } catch { setErr("Connection failed. Please try again."); }
     setConnecting(false);
