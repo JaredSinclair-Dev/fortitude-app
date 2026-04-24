@@ -2571,6 +2571,7 @@ const BrokerAccounts = ({ setPage }) => {
   const [connecting,   setConnecting]   = useState(false);
   const [err,          setErr]          = useState("");
   const [copied,       setCopied]       = useState("");
+  const [setupConn,    setSetupConn]    = useState(null);
 
   useEffect(() => {
     if (!token) return;
@@ -2748,10 +2749,15 @@ const BrokerAccounts = ({ setPage }) => {
                 <div style={{width:7,height:7,borderRadius:"50%",background:conn.is_active?"#29ff88":C.pink,boxShadow:conn.is_active?"0 0 6px #29ff8880":"none"}}/>
                 <span style={{fontSize:11,color:conn.is_active?"#29ff88":C.pink}}>{conn.is_active?"Active":"Inactive"}</span>
               </div>
-              <div style={{display:"flex",gap:8}}>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {conn.broker_type==="ctrader"&&(
                   <button className="btn bg" style={{fontSize:11,padding:"5px 12px",display:"flex",alignItems:"center",gap:5,opacity:syncing[conn.id]?0.6:1}} disabled={syncing[conn.id]} onClick={()=>syncConn(conn.id)}>
                     <IC n="refresh" s={11} c={C.textMuted}/>{syncing[conn.id]?"Syncing...":"Sync Now"}
+                  </button>
+                )}
+                {(conn.broker_type==="mt4"||conn.broker_type==="mt5")&&conn.webhook_secret&&(
+                  <button className="btn bg" style={{fontSize:11,padding:"5px 12px",display:"flex",alignItems:"center",gap:5}} onClick={()=>setSetupConn(conn)}>
+                    <IC n="info" s={11} c={C.accent}/> View Setup
                   </button>
                 )}
                 <button className="btn bg" style={{fontSize:11,padding:"5px 12px",display:"flex",alignItems:"center",gap:5,color:C.pink,borderColor:"rgba(233,30,167,.25)"}} onClick={()=>disconnectConn(conn.id)}>
@@ -2941,6 +2947,56 @@ const BrokerAccounts = ({ setPage }) => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── View Setup Modal (re-open credentials for existing MT connection) ── */}
+      {setupConn&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:1100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setSetupConn(null);}}>
+          <div className="mc" style={{width:"100%",maxWidth:500,position:"relative",maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+              <div style={{fontFamily:"'Counter-Strike',sans-serif",fontSize:18,fontWeight:300,color:C.text}}>
+                {(setupConn.broker_type||"").toUpperCase()} Setup — {setupConn.account_label}
+              </div>
+              <button onClick={()=>setSetupConn(null)} style={{background:"none",border:"none",cursor:"pointer",padding:4}}>
+                <IC n="close" s={18} c={C.textDim}/>
+              </button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div style={{padding:"12px 14px",background:"rgba(41,255,136,.06)",border:"1px solid rgba(41,255,136,.2)",borderRadius:7}}>
+                <div style={{fontSize:11,color:C.textDim}}>Paste these credentials into the EA file, then install it in your terminal.</div>
+              </div>
+              {[{label:"Connection ID",value:setupConn.id,key:"sid"},{label:"Webhook Secret",value:setupConn.webhook_secret,key:"ssec"}].map(f=>(
+                <div key={f.key}>
+                  <label style={{fontSize:11,color:C.textDim,display:"block",marginBottom:5}}>{f.label}</label>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <input readOnly value={f.value||""} className="inp" style={{flex:1,fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.accent}}/>
+                    <button className="btn bg" style={{padding:"7px 10px",fontSize:11,flexShrink:0,display:"flex",alignItems:"center",gap:4}} onClick={()=>copyText(f.value,f.key)}>
+                      <IC n={copied===f.key?"check":"copy"} s={12} c={copied===f.key?"#29ff88":C.textMuted}/>{copied===f.key?"Copied":"Copy"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <button className="btn bg" style={{fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}} onClick={()=>downloadEa("FortitudeSync.mq4")}>
+                  <IC n="download" s={12} c={C.accent}/> .mq4 (MT4)
+                </button>
+                <button className="btn bg" style={{fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}} onClick={()=>downloadEa("FortitudeSync.mq5")}>
+                  <IC n="download" s={12} c={C.accent}/> .mq5 (MT5)
+                </button>
+              </div>
+              <div style={{padding:"12px 14px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:7,fontSize:11,color:C.textDim,lineHeight:1.85}}>
+                <div style={{fontWeight:600,color:C.text,marginBottom:6}}>Setup Instructions</div>
+                <ol style={{paddingLeft:18,margin:0}}>
+                  <li>Download the EA file above and open it in MetaEditor</li>
+                  <li>Paste your <strong style={{color:C.textMuted}}>Connection ID</strong> and <strong style={{color:C.textMuted}}>Webhook Secret</strong> into the input fields at the top of the EA</li>
+                  <li>In {(setupConn.broker_type||"MT4").toUpperCase()}: <strong style={{color:C.textMuted}}>Tools → Options → Expert Advisors</strong> → enable "Allow WebRequest" and add <code style={{color:C.accent,fontSize:10}}>https://api.fortitude.trade</code></li>
+                  <li>Attach the EA to any chart — trades sync automatically while your terminal is open</li>
+                </ol>
+              </div>
+              <button className="btn bp" style={{width:"100%",fontSize:12}} onClick={()=>setSetupConn(null)}>Close</button>
+            </div>
           </div>
         </div>
       )}
@@ -10948,23 +11004,34 @@ export default function App() {
     document.title = "Fortitude | Market Intelligence Platform";
   }, []);
 
-  const NAV = [
-    { id:"dashboard",   label:"Dashboard",              icon:"dashboard" },
-    { id:"intelligence",label:"Market Intelligence",    icon:"intel" },
-    { id:"journal",     label:"Performance Journal",    icon:"journal" },
-    { id:"behavioral",  label:"Behavioral Intelligence",icon:"brain" },
-    { id:"cognitive",   label:"Cognitive Intelligence", icon:"zap" },
-    { id:"coach",       label:"Performance Coach",      icon:"coach" },
-    { id:"education",   label:"Education",              icon:"edu" },
-    { id:"calendar",    label:"Economic Calendar",      icon:"cal"  },
-    { id:"community",   label:"Community",              icon:"comm" },
-    { id:"pricing",     label:"Membership",             icon:"shield" },
-    { id:"broker_accounts", label:"Connected Accounts",    icon:"broker" },
-    { id:"affiliate",   label:"Affiliate",              icon:"ref"   },
-    { id:"account",     label:"Account",                icon:"acct" },
-    { id:"quant",       label:"Quant Research",         icon:"quant" },
-    { id:"admin",       label:"Admin",                  icon:"admin" },
+  const NAV_GROUPS = [
+    { label: "Trading", items: [
+      { id:"dashboard",       label:"Dashboard",        icon:"dashboard" },
+      { id:"journal",         label:"Journal",          icon:"journal"   },
+      { id:"broker_accounts", label:"Connected Accounts",icon:"broker"   },
+    ]},
+    { label: "Intelligence", items: [
+      { id:"intelligence", label:"Market Intel",    icon:"intel"  },
+      { id:"behavioral",   label:"Behavioral",      icon:"brain"  },
+      { id:"cognitive",    label:"Cognitive",        icon:"zap"    },
+      { id:"quant",        label:"Quant Research",   icon:"quant"  },
+    ]},
+    { label: "Coaching", items: [
+      { id:"coach",     label:"Performance Coach", icon:"coach" },
+      { id:"education", label:"Education",         icon:"edu"   },
+      { id:"calendar",  label:"Calendar",          icon:"cal"   },
+    ]},
+    { label: "Community", items: [
+      { id:"community", label:"Community", icon:"comm" },
+    ]},
+    { label: "Account", items: [
+      { id:"pricing",   label:"Membership", icon:"shield" },
+      { id:"affiliate", label:"Affiliate",  icon:"ref"    },
+      { id:"account",   label:"Settings",   icon:"acct"   },
+      { id:"admin",     label:"Admin",      icon:"admin"  },
+    ]},
   ];
+  const NAV = NAV_GROUPS.flatMap(g => g.items);
 
   const PAGES = {
     dashboard:   Dashboard,
@@ -11208,18 +11275,27 @@ export default function App() {
                 </div>
                 <div onClick={()=>setMobNavOpen(false)} style={{ color:C.textDim,fontSize:18,cursor:"pointer",padding:4,lineHeight:1 }}>✕</div>
               </div>
-              <nav style={{ flex:1,display:"flex",flexDirection:"column",gap:1 }}>
-                {NAV.map(n => {
-                  const savedU = (() => { try { return JSON.parse(localStorage.getItem("fis_user") || "{}"); } catch { return {}; } })();
-                  const isOwner = savedU.role === "admin" || savedU.role === "super_admin" || savedU.email === "jared@fortitude.trade" || savedU.email === "deacon@fortitude.trade";
-                  const granted = n.id === "admin" ? isOwner : (ACCESS[n.id]===undefined || canAccess(tier,n.id));
-                  const isActive = page===n.id;
+              <nav style={{ flex:1,display:"flex",flexDirection:"column",gap:0 }}>
+                {NAV_GROUPS.map((group,gi) => {
+                  const savedU = (() => { try { return JSON.parse(localStorage.getItem("fis_user")||"{}"); } catch { return {}; } })();
+                  const isOwner = savedU.role==="admin"||savedU.role==="super_admin"||savedU.email==="jared@fortitude.trade"||savedU.email==="deacon@fortitude.trade";
+                  const visibleItems = group.items.filter(n => n.id !== "admin" || isOwner);
+                  if (visibleItems.length === 0) return null;
                   return (
-                    <div key={n.id} className={`ni${isActive?" ac":""}`} style={{ opacity:granted?1:0.42 }}
-                      onClick={()=>{ if(granted){ setPage(n.id); setMobNavOpen(false); } }}>
-                      <IC n={n.icon} s={14}/>
-                      <span style={{ flex:1 }}>{n.label}</span>
-                      {!granted && <IC n="lock" s={10} c={C.textDim}/>}
+                    <div key={group.label} style={{ marginBottom:4 }}>
+                      <div style={{ fontSize:9,fontWeight:700,color:C.textDim,letterSpacing:".1em",textTransform:"uppercase",padding:"8px 10px 4px",opacity:0.6 }}>{group.label}</div>
+                      {visibleItems.map(n => {
+                        const granted = n.id==="admin" ? isOwner : (ACCESS[n.id]===undefined||canAccess(tier,n.id));
+                        const isActive = page===n.id;
+                        return (
+                          <div key={n.id} className={`ni${isActive?" ac":""}`} style={{ opacity:granted?1:0.42 }}
+                            onClick={()=>{ if(granted){ setPage(n.id); setMobNavOpen(false); } }}>
+                            <IC n={n.icon} s={14}/>
+                            <span style={{ flex:1 }}>{n.label}</span>
+                            {!granted && <IC n="lock" s={10} c={C.textDim}/>}
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -11253,17 +11329,26 @@ export default function App() {
             </div>
             <div style={{ fontSize:9,color:C.text,letterSpacing:".16em",textTransform:"uppercase",marginTop:2,fontFamily:"'Inter',sans-serif",fontWeight:500 }}>Performance Operating System</div>
           </div>
-          <nav style={{ flex:1,display:"flex",flexDirection:"column",gap:1 }}>
-            {NAV.map(n => {
-              const savedU = (() => { try { return JSON.parse(localStorage.getItem("fis_user") || "{}"); } catch { return {}; } })();
-                  const isOwner = savedU.role === "admin" || savedU.role === "super_admin" || savedU.email === "jared@fortitude.trade" || savedU.email === "deacon@fortitude.trade";
-                  const granted = n.id === "admin" ? isOwner : (ACCESS[n.id]===undefined || canAccess(tier,n.id));
-              const isActive = page===n.id;
+          <nav style={{ flex:1,display:"flex",flexDirection:"column",gap:0 }}>
+            {NAV_GROUPS.map((group,gi) => {
+              const savedU = (() => { try { return JSON.parse(localStorage.getItem("fis_user")||"{}"); } catch { return {}; } })();
+              const isOwner = savedU.role==="admin"||savedU.role==="super_admin"||savedU.email==="jared@fortitude.trade"||savedU.email==="deacon@fortitude.trade";
+              const visibleItems = group.items.filter(n => n.id !== "admin" || isOwner);
+              if (visibleItems.length === 0) return null;
               return (
-                <div key={n.id} className={`ni${isActive?" ac":""}`} style={{ opacity:granted?1:0.42,position:"relative" }} onClick={()=>setPage(n.id)}>
-                  <IC n={n.icon} s={14}/>
-                  <span style={{ flex:1 }}>{n.label}</span>
-                  {!granted && <IC n="lock" s={10} c={C.textDim}/>}
+                <div key={group.label} style={{ marginBottom:4 }}>
+                  <div style={{ fontSize:9,fontWeight:700,color:C.textDim,letterSpacing:".1em",textTransform:"uppercase",padding:"8px 10px 4px",opacity:0.6 }}>{group.label}</div>
+                  {visibleItems.map(n => {
+                    const granted = n.id==="admin" ? isOwner : (ACCESS[n.id]===undefined||canAccess(tier,n.id));
+                    const isActive = page===n.id;
+                    return (
+                      <div key={n.id} className={`ni${isActive?" ac":""}`} style={{ opacity:granted?1:0.42,position:"relative" }} onClick={()=>setPage(n.id)}>
+                        <IC n={n.icon} s={14}/>
+                        <span style={{ flex:1 }}>{n.label}</span>
+                        {!granted && <IC n="lock" s={10} c={C.textDim}/>}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
