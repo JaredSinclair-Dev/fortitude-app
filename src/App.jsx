@@ -252,37 +252,68 @@ const BgSVG = () => (
 
 // ── API Client ────────────────────────────────────────────────────────────────
 const API_BASE = "https://fortitude-backend-production-4ca8.up.railway.app/api/v1";
+
+let _refreshPromise = null;
+async function _doRefresh() {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = (async () => {
+    try {
+      const stored = (() => { try { return JSON.parse(localStorage.getItem("fis_session") || "{}"); } catch { return {}; } })();
+      const body = stored.refreshToken ? { refreshToken: stored.refreshToken } : {};
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("refresh_failed");
+      const data = await res.json();
+      const newToken = data.data?.accessToken || data.accessToken;
+      if (!newToken) throw new Error("no_token");
+      const session = { ...stored, token: newToken };
+      if (data.data?.refreshToken) session.refreshToken = data.data.refreshToken;
+      localStorage.setItem("fis_session", JSON.stringify(session));
+      localStorage.setItem("fis_token", newToken);
+      return newToken;
+    } finally {
+      _refreshPromise = null;
+    }
+  })();
+  return _refreshPromise;
+}
+
+function _isAuthError(data) {
+  return data?.error === "AUTHENTICATION_ERROR" || data?.message === "Access token expired" ||
+    data?.message === "Invalid token" || data?.message === "No token provided";
+}
+
+async function _request(method, path, body, token) {
+  const headers = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const opts = { method, headers, credentials: "include" };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const res = await fetch(`${API_BASE}${path}`, opts);
+  const data = await res.json();
+  if ((res.status === 401 || _isAuthError(data)) && token) {
+    try {
+      const newToken = await _doRefresh();
+      headers["Authorization"] = `Bearer ${newToken}`;
+      const res2 = await fetch(`${API_BASE}${path}`, { ...opts, headers });
+      return res2.json();
+    } catch {
+      if (typeof window.__fortitudeLogout === "function") window.__fortitudeLogout();
+      return data;
+    }
+  }
+  return data;
+}
+
 const api = {
-  async post(path, body, token = null) {
-    const headers = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: "POST", headers, credentials: "include",
-      body: JSON.stringify(body),
-    });
-    return res.json();
-  },
-  async put(path, body, token = null) {
-    const headers = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: "PUT", headers, credentials: "include",
-      body: JSON.stringify(body),
-    });
-    return res.json();
-  },
-  async get(path, token = null) {
-    const headers = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}${path}`, { headers, credentials: "include" });
-    return res.json();
-  },
-  async del(path, token = null) {
-    const headers = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}${path}`, { method: "DELETE", headers, credentials: "include" });
-    return res.json();
-  },
+  post: (path, body, token = null) => _request("POST", path, body, token),
+  put:  (path, body, token = null) => _request("PUT",  path, body, token),
+  get:  (path, token = null)       => _request("GET",  path, undefined, token),
+  del:  (path, token = null)       => _request("DELETE", path, undefined, token),
 };
 const mapTier = (t) => ({ free:"free", core_45:"45", pro_65:"65", elite_95:"95", lifetime:"lifetime" }[t] || "free");
 const isOwnerEmail = (email) => email === "jared@fortitude.trade" || email === "deacon@fortitude.trade";
@@ -397,6 +428,7 @@ const Login = ({ onLogin }) => {
       if (data.success) {
         localStorage.setItem("fis_token", data.data.accessToken);
         localStorage.setItem("fis_user", JSON.stringify(data.data.user));
+        localStorage.setItem("fis_session", JSON.stringify({ token: data.data.accessToken, refreshToken: data.data.refreshToken }));
         onLogin({ token: data.data.accessToken, user: data.data.user });
       } else {
         setError(data.error?.message || "Invalid email or password.");
@@ -437,6 +469,7 @@ const Login = ({ onLogin }) => {
         if (loginData.success) {
           localStorage.setItem("fis_token", loginData.data.accessToken);
           localStorage.setItem("fis_user", JSON.stringify(loginData.data.user));
+          localStorage.setItem("fis_session", JSON.stringify({ token: loginData.data.accessToken, refreshToken: loginData.data.refreshToken }));
           onLogin({ token: loginData.data.accessToken, user: loginData.data.user });
         } else {
           setError("Account created! Please sign in.");
@@ -10875,7 +10908,7 @@ export default function App() {
 
   const handleLogout = () => {
     if (token) api.post("/auth/logout", {}, token).catch(()=>{});
-    localStorage.removeItem("fis_token"); localStorage.removeItem("fis_user");
+    localStorage.removeItem("fis_token"); localStorage.removeItem("fis_user"); localStorage.removeItem("fis_session");
     setAuthed(false); setToken(null); setTier("free");
     setSubStatus("inactive"); setPage("dashboard"); setUser(null);
   };
