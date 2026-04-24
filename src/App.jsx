@@ -178,6 +178,7 @@ const IC = ({ n, s = 16, c = "currentColor" }) => {
     cal_check:   <><path d="M21 10H3M16 2v4M8 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="m9 16 2 2 4-4"/></>,
     globe:       <><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>,
     news:        <><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 0-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8V6z"/></>,
+    broker:      <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>,
   };
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{p[n] || p.alert}</svg>;
 };
@@ -2520,6 +2521,399 @@ const STATUS_META = {
 
 // ── Journal component ─────────────────────────────────────────────────────────
 
+// ── Broker Accounts ───────────────────────────────────────────────────────────
+const BrokerAccounts = ({ setPage }) => {
+  const token = localStorage.getItem("fis_token");
+  const [connections,  setConnections]  = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [syncing,      setSyncing]      = useState({});
+  const [addOpen,      setAddOpen]      = useState(false);
+  const [addStep,      setAddStep]      = useState("pick");
+  const [brokerType,   setBrokerType]   = useState(null);
+  const [accountLabel, setAccountLabel] = useState("");
+  const [ctAccounts,   setCtAccounts]   = useState([]);
+  const [ctTokens,     setCtTokens]     = useState(null);
+  const [ctSelectedId, setCtSelectedId] = useState(null);
+  const [mtConn,       setMtConn]       = useState(null);
+  const [connecting,   setConnecting]   = useState(false);
+  const [err,          setErr]          = useState("");
+  const [copied,       setCopied]       = useState("");
+
+  useEffect(() => {
+    if (!token) return;
+    api.get("/broker/connections", token)
+      .then(d => { if (d.success) setConnections(d.data.connections || []); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const syncConn = async (connId) => {
+    setSyncing(s => ({ ...s, [connId]: true }));
+    try {
+      await api.post(`/broker/connections/${connId}/sync`, {}, token);
+      setConnections(prev => prev.map(c => c.id === connId ? { ...c, last_synced_at: new Date().toISOString() } : c));
+    } catch {}
+    setSyncing(s => ({ ...s, [connId]: false }));
+  };
+
+  const disconnectConn = async (connId) => {
+    if (!window.confirm("Disconnect this account? Your existing trades won't be deleted.")) return;
+    await api.del(`/broker/connections/${connId}`, token);
+    setConnections(prev => prev.filter(c => c.id !== connId));
+  };
+
+  const openAdd = () => {
+    setAddStep("pick"); setBrokerType(null); setAccountLabel("");
+    setCtAccounts([]); setCtTokens(null); setCtSelectedId(null);
+    setMtConn(null); setErr(""); setAddOpen(true);
+  };
+
+  const connectCtrader = async () => {
+    setConnecting(true); setErr("");
+    try {
+      const d = await api.get("/broker/ctrader/auth", token);
+      if (!d.success) { setErr(d.error?.message || "Failed to get auth URL"); setConnecting(false); return; }
+      const popup = window.open(d.data.url, "ctrader_auth", "width=600,height=700,left=200,top=100");
+      if (!popup) { setErr("Popup blocked — please allow popups for this site."); setConnecting(false); return; }
+      const handleMsg = async (e) => {
+        if (e.data?.type !== "CTRADER_OAUTH_CODE") return;
+        window.removeEventListener("message", handleMsg);
+        const result = await api.post("/broker/ctrader/callback", { code: e.data.code }, token);
+        if (result.success) {
+          setCtAccounts(result.data.accounts || []);
+          setCtTokens({ accessToken: result.data.accessToken, refreshToken: result.data.refreshToken, expiresIn: result.data.expiresIn });
+          setAddStep("ct_pick");
+        } else {
+          setErr(result.error?.message || "cTrader authorization failed");
+        }
+        setConnecting(false);
+      };
+      window.addEventListener("message", handleMsg);
+      const poll = setInterval(() => { if (popup.closed) { clearInterval(poll); window.removeEventListener("message", handleMsg); setConnecting(false); } }, 1000);
+    } catch { setErr("Connection failed. Please try again."); setConnecting(false); }
+  };
+
+  const saveCtrader = async () => {
+    if (!ctSelectedId) { setErr("Please select an account"); return; }
+    setConnecting(true); setErr("");
+    const acct = ctAccounts.find(a => a.ctAccountId === ctSelectedId);
+    try {
+      const d = await api.post("/broker/ctrader/connect", {
+        accessToken: ctTokens.accessToken, refreshToken: ctTokens.refreshToken,
+        expiresIn: ctTokens.expiresIn, ctAccountId: ctSelectedId,
+        accountLabel: accountLabel || acct?.brokerName || "cTrader Account",
+      }, token);
+      if (d.success) { setConnections(prev => [...prev, d.data.connection]); setAddStep("done"); }
+      else setErr(d.error?.message || "Failed to connect account");
+    } catch { setErr("Connection failed. Please try again."); }
+    setConnecting(false);
+  };
+
+  const createMtConn = async () => {
+    setConnecting(true); setErr("");
+    try {
+      const d = await api.post("/broker/mt/connect", {
+        brokerType, accountLabel: accountLabel || `${(brokerType||"").toUpperCase()} Account`,
+      }, token);
+      if (d.success) {
+        setMtConn(d.data);
+        setConnections(prev => [...prev, { id: d.data.connectionId, broker_type: brokerType, account_label: accountLabel || `${(brokerType||"").toUpperCase()} Account`, is_active: true, last_synced_at: null, created_at: new Date().toISOString() }]);
+      } else setErr(d.error?.message || "Failed to create connection");
+    } catch { setErr("Connection failed. Please try again."); }
+    setConnecting(false);
+  };
+
+  const downloadEa = async (filename) => {
+    try {
+      const res = await fetch(`${API_BASE}/broker/mt/ea/${filename}`, { headers: { Authorization: `Bearer ${token}` } });
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a"); a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert("Download failed. Please try again."); }
+  };
+
+  const copyText = (text, key) => {
+    navigator.clipboard.writeText(text).then(() => { setCopied(key); setTimeout(() => setCopied(""), 2000); });
+  };
+
+  const relTime = iso => {
+    if (!iso) return "Never";
+    const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 1) return "Just now";
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  };
+
+  const BK_LABEL = { ctrader:"cTrader", mt4:"MT4", mt5:"MT5" };
+  const BK_COLOR = { ctrader:C.accent, mt4:"#f59e0b", mt5:"#10b981" };
+
+  return (
+    <div className="fi">
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:18,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h1 style={{fontFamily:"'Counter-Strike',sans-serif",fontSize:24,fontWeight:300,color:C.text,marginBottom:4}}>Connected Accounts</h1>
+          <p style={{fontSize:13,color:C.textMuted}}>Link your trading accounts for automatic trade sync</p>
+        </div>
+        <button className="btn bp" style={{fontSize:11,padding:"8px 16px",display:"flex",alignItems:"center",gap:6}} onClick={openAdd}>
+          <IC n="plus" s={12} c="#000"/> Add Account
+        </button>
+      </div>
+
+      {/* Stats */}
+      {connections.length > 0 && (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:16}}>
+          {[
+            {l:"Connected",   v:connections.filter(c=>c.is_active).length,    c:C.accent},
+            {l:"Broker Types",v:[...new Set(connections.map(c=>c.broker_type))].length, c:C.textMuted},
+            {l:"Last Sync",   v:relTime(connections.reduce((a,c)=>!a||new Date(c.last_synced_at||0)>new Date(a||0)?c.last_synced_at:a,null)), c:C.textDim},
+          ].map(m=>(
+            <div key={m.l} className="mc" style={{padding:"12px 16px"}}>
+              <div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5}}>{m.l}</div>
+              <div style={{fontSize:20,fontWeight:600,color:m.c,fontFamily:"JetBrains Mono,monospace"}}>{m.v}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Account list */}
+      {loading ? (
+        <div style={{textAlign:"center",padding:60,color:C.textDim,fontSize:13}}>Loading accounts...</div>
+      ) : connections.length === 0 ? (
+        <div className="mc" style={{textAlign:"center",padding:"60px 20px"}}>
+          <div style={{width:52,height:52,borderRadius:"50%",background:`${C.accent}18`,border:`1px solid ${C.accent}40`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 18px"}}>
+            <IC n="broker" s={22} c={C.accent}/>
+          </div>
+          <div style={{fontFamily:"'Counter-Strike',sans-serif",fontSize:20,fontWeight:300,color:C.text,marginBottom:8}}>No Accounts Connected</div>
+          <div style={{fontSize:13,color:C.textMuted,maxWidth:400,margin:"0 auto 24px",lineHeight:1.8}}>
+            Connect your broker accounts to sync trades automatically. Supports cTrader, MT4, and MT5.
+          </div>
+          <button className="btn bp" style={{fontSize:12,padding:"10px 22px",display:"inline-flex",alignItems:"center",gap:8}} onClick={openAdd}>
+            <IC n="plus" s={13} c="#000"/> Connect Your First Account
+          </button>
+        </div>
+      ) : (
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {connections.map(conn=>(
+            <div key={conn.id} className="mc" style={{display:"flex",alignItems:"center",gap:16,padding:"16px 20px",flexWrap:"wrap"}}>
+              <div style={{width:46,height:46,borderRadius:8,background:`${BK_COLOR[conn.broker_type]||C.accent}18`,border:`1px solid ${BK_COLOR[conn.broker_type]||C.accent}40`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,gap:2}}>
+                <IC n="broker" s={15} c={BK_COLOR[conn.broker_type]||C.accent}/>
+                <span style={{fontSize:7,fontWeight:700,color:BK_COLOR[conn.broker_type]||C.accent,letterSpacing:".04em"}}>{BK_LABEL[conn.broker_type]||conn.broker_type}</span>
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:600,color:C.text,marginBottom:3}}>{conn.account_label||"Trading Account"}</div>
+                <div style={{fontSize:11,color:C.textDim,display:"flex",gap:12,flexWrap:"wrap"}}>
+                  <span>{BK_LABEL[conn.broker_type]||conn.broker_type}</span>
+                  <span>Last synced: {relTime(conn.last_synced_at)}</span>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <div style={{width:7,height:7,borderRadius:"50%",background:conn.is_active?"#29ff88":C.pink,boxShadow:conn.is_active?"0 0 6px #29ff8880":"none"}}/>
+                <span style={{fontSize:11,color:conn.is_active?"#29ff88":C.pink}}>{conn.is_active?"Active":"Inactive"}</span>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                {conn.broker_type==="ctrader"&&(
+                  <button className="btn bg" style={{fontSize:11,padding:"5px 12px",display:"flex",alignItems:"center",gap:5,opacity:syncing[conn.id]?0.6:1}} disabled={syncing[conn.id]} onClick={()=>syncConn(conn.id)}>
+                    <IC n="refresh" s={11} c={C.textMuted}/>{syncing[conn.id]?"Syncing...":"Sync Now"}
+                  </button>
+                )}
+                <button className="btn bg" style={{fontSize:11,padding:"5px 12px",display:"flex",alignItems:"center",gap:5,color:C.pink,borderColor:"rgba(233,30,167,.25)"}} onClick={()=>disconnectConn(conn.id)}>
+                  <IC n="close" s={11} c={C.pink}/> Disconnect
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Info card */}
+      <div className="mc" style={{marginTop:14,padding:"16px 20px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+          <IC n="info" s={14} c={C.accent}/>
+          <span style={{fontSize:12,fontWeight:600,color:C.text}}>How Auto-Sync Works</span>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
+          {[
+            {label:"cTrader",   desc:"OAuth 2.0 — authorize once, trades sync every 15 minutes automatically."},
+            {label:"MT4 / MT5", desc:"Install our free Expert Advisor. Trades sync in real-time while your terminal is open."},
+          ].map(b=>(
+            <div key={b.label} style={{padding:"12px 14px",background:`${C.accent}06`,border:`1px solid ${C.border}`,borderRadius:6}}>
+              <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:4}}>{b.label}</div>
+              <div style={{fontSize:11,color:C.textDim,lineHeight:1.7}}>{b.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Add Account Modal ── */}
+      {addOpen&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>{if(e.target===e.currentTarget)setAddOpen(false);}}>
+          <div className="mc" style={{width:"100%",maxWidth:500,position:"relative",maxHeight:"90vh",overflowY:"auto"}}>
+            {/* Modal header */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+              <div style={{fontFamily:"'Counter-Strike',sans-serif",fontSize:18,fontWeight:300,color:C.text}}>
+                {addStep==="pick"&&"Choose Broker"}
+                {addStep==="ct_oauth"&&"Connect cTrader"}
+                {addStep==="ct_pick"&&"Select Account"}
+                {addStep==="mt_setup"&&(mtConn?`${(brokerType||"").toUpperCase()} Setup`:`Connect ${(brokerType||"").toUpperCase()}`)}
+                {addStep==="done"&&"Account Connected"}
+              </div>
+              <button onClick={()=>setAddOpen(false)} style={{background:"none",border:"none",cursor:"pointer",padding:4}}>
+                <IC n="close" s={18} c={C.textDim}/>
+              </button>
+            </div>
+
+            {err&&<div style={{padding:"10px 14px",background:"rgba(233,30,167,.08)",border:"1px solid rgba(233,30,167,.25)",borderRadius:6,fontSize:12,color:C.pink,marginBottom:14}}>{err}</div>}
+
+            {/* Step: pick broker */}
+            {addStep==="pick"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <p style={{fontSize:13,color:C.textMuted,marginBottom:4}}>Which platform do you trade on?</p>
+                {[
+                  {id:"ctrader",label:"cTrader",     desc:"Pepperstone, IC Markets, FunderPro, and most cTrader prop firms", color:C.accent},
+                  {id:"mt4",    label:"MetaTrader 4", desc:"FTMO MT4, legacy forex brokers, most pre-2022 prop firms",         color:"#f59e0b"},
+                  {id:"mt5",    label:"MetaTrader 5", desc:"Newer prop firms, futures + forex, equity brokers",                color:"#10b981"},
+                ].map(b=>(
+                  <div key={b.id} onClick={()=>{ setBrokerType(b.id); setAddStep(b.id==="ctrader"?"ct_oauth":"mt_setup_label"); }}
+                    style={{padding:"14px 16px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,cursor:"pointer",transition:"all .2s",display:"flex",alignItems:"center",gap:14}}
+                    onMouseEnter={e=>e.currentTarget.style.borderColor=b.color+"80"}
+                    onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
+                    <div style={{width:38,height:38,borderRadius:6,background:`${b.color}18`,border:`1px solid ${b.color}40`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <IC n="broker" s={16} c={b.color}/>
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:2}}>{b.label}</div>
+                      <div style={{fontSize:11,color:C.textDim}}>{b.desc}</div>
+                    </div>
+                    <IC n="chevron_r" s={14} c={C.textDim}/>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Step: MT4/MT5 label input */}
+            {addStep==="mt_setup_label"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <p style={{fontSize:13,color:C.textMuted}}>Name this {(brokerType||"").toUpperCase()} account so you can identify it in your journal.</p>
+                <div>
+                  <label style={{fontSize:11,color:C.textDim,display:"block",marginBottom:6}}>Account Label</label>
+                  <input className="inp" value={accountLabel} onChange={e=>setAccountLabel(e.target.value)} placeholder={`e.g. FTMO ${(brokerType||"").toUpperCase()} Challenge`} style={{width:"100%",boxSizing:"border-box"}} onKeyDown={e=>{if(e.key==="Enter")createMtConn();}}/>
+                </div>
+                <button className="btn bp" style={{width:"100%",padding:"11px",fontSize:13,opacity:connecting?0.7:1}} disabled={connecting} onClick={createMtConn}>
+                  {connecting?"Creating...":"Generate Webhook →"}
+                </button>
+                <button className="btn bg" style={{width:"100%",fontSize:12}} onClick={()=>setAddStep("pick")}>← Back</button>
+              </div>
+            )}
+
+            {/* Step: MT4/MT5 credentials display */}
+            {addStep==="mt_setup"&&mtConn&&(
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <div style={{padding:"12px 14px",background:"rgba(41,255,136,.06)",border:"1px solid rgba(41,255,136,.2)",borderRadius:7}}>
+                  <div style={{fontSize:12,fontWeight:600,color:"#29ff88",marginBottom:2}}>Connection created</div>
+                  <div style={{fontSize:11,color:C.textDim}}>Paste these credentials into the EA, then install it in your terminal.</div>
+                </div>
+                {[{label:"Connection ID",value:mtConn.connectionId,key:"connId"},{label:"Webhook Secret",value:mtConn.webhookSecret,key:"secret"}].map(f=>(
+                  <div key={f.key}>
+                    <label style={{fontSize:11,color:C.textDim,display:"block",marginBottom:5}}>{f.label}</label>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <input readOnly value={f.value} className="inp" style={{flex:1,fontFamily:"JetBrains Mono,monospace",fontSize:10,color:C.accent}}/>
+                      <button className="btn bg" style={{padding:"7px 10px",fontSize:11,flexShrink:0,display:"flex",alignItems:"center",gap:4}} onClick={()=>copyText(f.value,f.key)}>
+                        <IC n={copied===f.key?"check":"copy"} s={12} c={copied===f.key?"#29ff88":C.textMuted}/>{copied===f.key?"Copied":"Copy"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <button className="btn bg" style={{fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}} onClick={()=>downloadEa("FortitudeSync.mq4")}>
+                    <IC n="download" s={12} c={C.accent}/> .mq4 (MT4)
+                  </button>
+                  <button className="btn bg" style={{fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}} onClick={()=>downloadEa("FortitudeSync.mq5")}>
+                    <IC n="download" s={12} c={C.accent}/> .mq5 (MT5)
+                  </button>
+                </div>
+                <div style={{padding:"12px 14px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:7,fontSize:11,color:C.textDim,lineHeight:1.85}}>
+                  <div style={{fontWeight:600,color:C.text,marginBottom:6}}>Setup Instructions</div>
+                  <ol style={{paddingLeft:18,margin:0}}>
+                    <li>Download the EA file above and open it in your terminal's MetaEditor</li>
+                    <li>Paste your <strong style={{color:C.textMuted}}>Connection ID</strong> and <strong style={{color:C.textMuted}}>Webhook Secret</strong> into the input fields at the top</li>
+                    <li>In {(brokerType||"MT4").toUpperCase()}: <strong style={{color:C.textMuted}}>Tools → Options → Expert Advisors</strong> → enable "Allow WebRequest" and add <code style={{color:C.accent,fontSize:10}}>https://api.fortitude.trade</code></li>
+                    <li>Attach the EA to any chart — it syncs trades automatically while your terminal is open</li>
+                  </ol>
+                </div>
+                <button className="btn bp" style={{width:"100%",fontSize:12}} onClick={()=>setAddOpen(false)}>Done →</button>
+              </div>
+            )}
+
+            {/* Step: cTrader OAuth button */}
+            {addStep==="ct_oauth"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                <div style={{padding:"14px 16px",background:`${C.accent}08`,border:`1px solid ${C.accent}20`,borderRadius:8}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:6}}>Secure OAuth 2.0</div>
+                  <div style={{fontSize:11,color:C.textDim,lineHeight:1.7}}>You'll authorize via cTrader's official page. We never see your credentials — only a secure access token is stored, encrypted at rest.</div>
+                </div>
+                <div>
+                  <label style={{fontSize:11,color:C.textDim,display:"block",marginBottom:6}}>Account Label (optional)</label>
+                  <input className="inp" value={accountLabel} onChange={e=>setAccountLabel(e.target.value)} placeholder="e.g. Pepperstone Live" style={{width:"100%",boxSizing:"border-box"}}/>
+                </div>
+                <button className="btn bp" style={{width:"100%",padding:"12px",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:connecting?0.7:1}} disabled={connecting} onClick={connectCtrader}>
+                  <IC n="external" s={14} c="#000"/>{connecting?"Waiting for authorization...":"Connect with cTrader"}
+                </button>
+                <button className="btn bg" style={{width:"100%",fontSize:12}} onClick={()=>setAddStep("pick")}>← Back</button>
+              </div>
+            )}
+
+            {/* Step: cTrader account picker */}
+            {addStep==="ct_pick"&&(
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <p style={{fontSize:13,color:C.textMuted}}>Select the account you want to connect:</p>
+                <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:280,overflowY:"auto"}}>
+                  {ctAccounts.map(a=>(
+                    <div key={a.ctAccountId} onClick={()=>setCtSelectedId(a.ctAccountId)}
+                      style={{padding:"12px 14px",borderRadius:7,border:`1px solid ${ctSelectedId===a.ctAccountId?C.accent:C.border}`,background:ctSelectedId===a.ctAccountId?`${C.accent}10`:C.surface,cursor:"pointer",transition:"all .15s",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:600,color:C.text}}>{a.brokerName||`Account ${a.login}`}</div>
+                        <div style={{fontSize:11,color:C.textDim}}>Login: {a.login} · {a.currency} · {a.isLive?"Live":"Demo"}</div>
+                      </div>
+                      <div style={{fontSize:14,fontWeight:600,color:C.accent,fontFamily:"JetBrains Mono,monospace"}}>
+                        {a.balance!=null?`$${parseFloat(a.balance).toFixed(2)}`:"—"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button className="btn bp" style={{width:"100%",padding:"11px",fontSize:13,opacity:connecting||!ctSelectedId?0.7:1}} disabled={connecting||!ctSelectedId} onClick={saveCtrader}>
+                  {connecting?"Connecting...":"Connect Selected Account →"}
+                </button>
+                <button className="btn bg" style={{width:"100%",fontSize:12}} onClick={()=>setAddStep("ct_oauth")}>← Back</button>
+              </div>
+            )}
+
+            {/* Step: done */}
+            {addStep==="done"&&(
+              <div style={{textAlign:"center",padding:"20px 0"}}>
+                <div style={{width:52,height:52,borderRadius:"50%",background:"rgba(41,255,136,.1)",border:"1px solid rgba(41,255,136,.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
+                  <IC n="check" s={24} c="#29ff88"/>
+                </div>
+                <div style={{fontSize:16,fontWeight:600,color:C.text,marginBottom:8}}>Account Connected</div>
+                <div style={{fontSize:13,color:C.textMuted,marginBottom:24,lineHeight:1.7,maxWidth:360,margin:"0 auto 24px"}}>
+                  Your cTrader account is connected. Trades are syncing now and will update automatically every 15 minutes.
+                </div>
+                <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+                  <button className="btn bp" style={{fontSize:12,padding:"10px 20px"}} onClick={()=>{setAddOpen(false);setPage("journal");}}>Open Journal →</button>
+                  <button className="btn bg" style={{fontSize:12,padding:"10px 16px"}} onClick={()=>setAddOpen(false)}>Close</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Journal = ({ setPage, currentTier, user }) => {
   const token = localStorage.getItem("fis_token");
 
@@ -2533,6 +2927,7 @@ const Journal = ({ setPage, currentTier, user }) => {
   const [filterDir,     setFilterDir]     = useState("All");
   const [filterSession, setFilterSession] = useState("All");
   const [filterResult,  setFilterResult]  = useState("All");
+  const [filterAccount, setFilterAccount] = useState("All");
   const [filterFrom,    setFilterFrom]    = useState("");
   const [filterTo,      setFilterTo]      = useState("");
   const [sortField,     setSortField]     = useState("open_time");
@@ -2654,12 +3049,14 @@ const Journal = ({ setPage, currentTier, user }) => {
   const monthPnl = calDays.reduce((a,d)=>a+(d?d.pnl:0),0);
 
   // ── Filters ───────────────────────────────────────────────────────────────
-  const instruments = ["All",...new Set(trades.map(t=>t.instrument).filter(Boolean))];
+  const instruments   = ["All",...new Set(trades.map(t=>t.instrument).filter(Boolean))];
+  const accountNames  = ["All",...new Set(trades.map(t=>t.account_name).filter(Boolean))];
   const filteredTrades = [...trades]
     .filter(t=>filterInstr==="All"||t.instrument===filterInstr)
     .filter(t=>filterDir==="All"||(filterDir==="Long"&&t.trade_type==="Long")||(filterDir==="Short"&&t.trade_type==="Short"))
     .filter(t=>filterSession==="All"||t.session.toLowerCase()===filterSession.toLowerCase())
     .filter(t=>{ if(filterResult==="All") return true; if(filterResult==="Win") return t.profit>0; if(filterResult==="Loss") return t.profit<0; if(filterResult==="Breakeven") return t.profit===0; return true; })
+    .filter(t=>filterAccount==="All"||t.account_name===filterAccount)
     .filter(t=>!filterFrom||!t.open_time||t.open_time>=filterFrom)
     .filter(t=>!filterTo  ||!t.open_time||t.open_time<=filterTo+"T23:59:59")
     .sort((a,b)=>{ const va=sortField==="open_time"?new Date(a.open_time||0):sortField==="profit"?a.profit:a[sortField]||0; const vb=sortField==="open_time"?new Date(b.open_time||0):sortField==="profit"?b.profit:b[sortField]||0; return sortDir==="asc"?(va>vb?1:-1):(va<vb?1:-1); });
@@ -2985,11 +3382,12 @@ const Journal = ({ setPage, currentTier, user }) => {
         <div>
           <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
             {[
+              {label:"Account",     val:filterAccount, set:setFilterAccount, opts:accountNames},
               {label:"Instrument",  val:filterInstr,   set:setFilterInstr,   opts:instruments},
               {label:"Direction",   val:filterDir,     set:setFilterDir,     opts:["All","Long","Short"]},
               {label:"Session",     val:filterSession, set:setFilterSession, opts:["All","London","Ny","Asia"]},
               {label:"Result",      val:filterResult,  set:setFilterResult,  opts:["All","Win","Loss","Breakeven"]},
-            ].map(f=>(
+            ].filter(f=>f.label!=="Account"||accountNames.length>1).map(f=>(
               <div key={f.label} style={{display:"flex",alignItems:"center",gap:5}}>
                 <span style={{fontSize:11,color:C.textDim}}>{f.label}</span>
                 <select value={f.val} onChange={e=>f.set(e.target.value)} style={{background:"rgba(13,16,24,.8)",border:`1px solid ${C.border}`,borderRadius:4,color:C.text,fontSize:11,padding:"5px 8px"}}>
@@ -3005,8 +3403,8 @@ const Journal = ({ setPage, currentTier, user }) => {
               <span style={{fontSize:11,color:C.textDim}}>To</span>
               <input type="date" value={filterTo} onChange={e=>setFilterTo(e.target.value)} style={{background:"rgba(13,16,24,.8)",border:`1px solid ${C.border}`,borderRadius:4,color:C.text,fontSize:11,padding:"4px 8px"}}/>
             </div>
-            {(filterInstr!=="All"||filterDir!=="All"||filterSession!=="All"||filterResult!=="All"||filterFrom||filterTo)&&(
-              <button className="btn bg" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>{setFilterInstr("All");setFilterDir("All");setFilterSession("All");setFilterResult("All");setFilterFrom("");setFilterTo("");}}>Clear</button>
+            {(filterInstr!=="All"||filterDir!=="All"||filterSession!=="All"||filterResult!=="All"||filterAccount!=="All"||filterFrom||filterTo)&&(
+              <button className="btn bg" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>{setFilterInstr("All");setFilterDir("All");setFilterSession("All");setFilterResult("All");setFilterAccount("All");setFilterFrom("");setFilterTo("");}}>Clear</button>
             )}
             <span style={{fontSize:11,color:C.textDim,marginLeft:"auto"}}>{filteredTrades.length} trades</span>
           </div>
@@ -7319,6 +7717,7 @@ const ACCESS = {
   workshop:        { free:false,     "45":true, "65":true, "95":true },
   mentorship:      { free:false,     "45":true, "65":true, "95":true },
   affiliate:       { free:false,     "45":true, "65":true, "95":true },
+  broker_accounts: { free:false,     "45":true, "65":true, "95":true },
 };
 
 // AI usage caps by tier (requests/day)
@@ -10483,6 +10882,16 @@ export default function App() {
   // Expose logout to child components
   useEffect(() => { window.__fortitudeLogout = handleLogout; return () => { delete window.__fortitudeLogout; }; }, [token]);
 
+  // ── cTrader OAuth popup callback ─────────────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code   = params.get("code");
+    if (code && window.opener) {
+      try { window.opener.postMessage({ type: "CTRADER_OAUTH_CODE", code }, window.location.origin); } catch {}
+      window.close();
+    }
+  }, []);
+
   // ── Set favicon dynamically from embedded icon ──────────────────────────────
   useEffect(() => {
     // Inject Counter-Strike font link into head
@@ -10516,6 +10925,7 @@ export default function App() {
     { id:"calendar",    label:"Economic Calendar",      icon:"cal"  },
     { id:"community",   label:"Community",              icon:"comm" },
     { id:"pricing",     label:"Membership",             icon:"shield" },
+    { id:"broker_accounts", label:"Connected Accounts",    icon:"broker" },
     { id:"affiliate",   label:"Affiliate",              icon:"ref"   },
     { id:"account",     label:"Account",                icon:"acct" },
     { id:"quant",       label:"Quant Research",         icon:"quant" },
@@ -10534,6 +10944,7 @@ export default function App() {
     community:   Community,
     pricing:     Pricing,
     account:     Account,
+    broker_accounts: BrokerAccounts,
     affiliate:   AffiliateLanding,
     quant:       QuantResearchAnalyst,
     admin:       Admin,
