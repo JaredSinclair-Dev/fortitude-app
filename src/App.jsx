@@ -3828,7 +3828,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                 <label style={{fontSize:10,color:C.textDim,textTransform:"uppercase",letterSpacing:".05em",display:"block",marginBottom:4}}>Emotional State</label>
                 <select value={form.emotional_state} onChange={e=>setForm(p=>({...p,emotional_state:e.target.value}))} style={{width:"100%",background:"rgba(13,16,24,.9)",border:`1px solid ${C.border}`,borderRadius:5,color:C.text,fontSize:12,padding:"8px 10px"}}>
                   <option value="">— Select —</option>
-                  {["Calm","Confident","Anxious","Fearful","Greedy","FOMO","Disciplined","Impulsive","Neutral"].map(s=><option key={s} value={s.toLowerCase()}>{s}</option>)}
+                  {["Calm","Confident","Disciplined","Neutral","Anxious","Fearful","Greedy","FOMO","Impulsive","Frustrated"].map(s=><option key={s} value={s.toLowerCase()}>{s}</option>)}
                 </select>
               </div>
               <div>
