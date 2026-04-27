@@ -1260,9 +1260,6 @@ function computeFatigueIndex(trades) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // GLOBAL MARKET PULSE — Interactive World Map + Sessions + Intelligence
 // ═══════════════════════════════════════════════════════════════════════════════
-const MOCK_CONNECTIONS = [];
-
-const MOCK_SYNCED_TRADES = [];
 
 // Key macro events shown on the Global Market Pulse map
 const MAP_EVENTS = [
@@ -1898,11 +1895,22 @@ const Dashboard = ({ setPage, currentTier, user }) => {
   const pdiMeta    = pdiLabel(pdi);
   const [dashMode, setDashMode] = useState("trader");
   const [latestUpdate, setLatestUpdate] = useState(null);
+  const [dashTrades, setDashTrades] = useState([]);
+  const [dashTradesLoading, setDashTradesLoading] = useState(true);
 
   useEffect(() => {
     api.get('/market-updates?limit=1')
       .then(d => { if (d?.data?.[0]) setLatestUpdate(d.data[0]); })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem("fis_token");
+    if (!token) { setDashTradesLoading(false); return; }
+    api.get('/journal/trades', token)
+      .then(d => { if (d?.success) setDashTrades(d.data?.trades || []); })
+      .catch(() => {})
+      .finally(() => setDashTradesLoading(false));
   }, []);
 
   const [userClock, setUserClock] = useState({ city:null, tz:null, loading:true });
@@ -1963,98 +1971,98 @@ const Dashboard = ({ setPage, currentTier, user }) => {
 
           {/* Journal Summary */}
           {(() => {
-            const trades = MOCK_SYNCED_TRADES.filter(t => !t.is_open);
-            const wins   = trades.filter(t => t.profit > 0).length;
-            const losses = trades.filter(t => t.profit <= 0).length;
-            const winRate = trades.length > 0 ? Math.round((wins/trades.length)*100) : 0;
-            const totalPnl = trades.reduce((a,t) => a + t.profit + t.commission, 0);
-            const grossWin = trades.filter(t=>t.profit>0).reduce((a,t)=>a+t.profit,0);
-            const grossLoss= Math.abs(trades.filter(t=>t.profit<=0).reduce((a,t)=>a+t.profit,0));
-            const pf = grossLoss>0 ? (grossWin/grossLoss).toFixed(2) : "∞";
-            const avgWin = wins>0 ? (grossWin/wins).toFixed(0) : "0";
-            const avgLoss= losses>0 ? (grossLoss/losses).toFixed(0) : "0";
-            const avgDur = (() => {
-              const closed = MOCK_SYNCED_TRADES.filter(t=>!t.is_open&&t.close_time);
-              if (!closed.length) return "—";
-              const avg = closed.reduce((a,t)=>a+((new Date(t.close_time)-new Date(t.open_time))/60000),0)/closed.length;
+            const closed  = dashTrades.filter(t => !t.is_open);
+            const wins    = closed.filter(t => t.profit > 0).length;
+            const losses  = closed.filter(t => t.profit < 0).length;
+            const winRate = closed.length > 0 ? Math.round((wins/closed.length)*100) : 0;
+            const totalPnl = closed.reduce((a,t) => a + (t.profit||0) + (t.commission||0), 0);
+            const grossWin  = closed.filter(t=>t.profit>0).reduce((a,t)=>a+t.profit,0);
+            const grossLoss = Math.abs(closed.filter(t=>t.profit<0).reduce((a,t)=>a+t.profit,0));
+            const pf = grossLoss>0 ? (grossWin/grossLoss).toFixed(2) : wins>0?"∞":"—";
+            const avgWin  = wins>0   ? (grossWin/wins).toFixed(0)   : "0";
+            const avgLoss = losses>0 ? (grossLoss/losses).toFixed(0) : "0";
+            const avgDur  = (() => {
+              const withDur = closed.filter(t=>t.close_time&&t.open_time);
+              if (!withDur.length) return "—";
+              const avg = withDur.reduce((a,t)=>a+((new Date(t.close_time)-new Date(t.open_time))/60000),0)/withDur.length;
               return avg<60 ? `${Math.round(avg)}m` : `${Math.round(avg/60)}h ${Math.round(avg%60)}m`;
             })();
-            const recent = [...MOCK_SYNCED_TRADES].sort((a,b)=>new Date(b.open_time)-new Date(a.open_time)).slice(0,5);
-            const conn = MOCK_CONNECTIONS[0];
+            const recent = [...dashTrades].sort((a,b)=>new Date(b.open_time)-new Date(a.open_time)).slice(0,5);
+
             return (
               <div className="mc" style={{ padding:"16px 20px" }}>
-                {/* Header */}
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                     <IC n="journal" s={13} c={C.accent}/>
                     <div className="sl" style={{ margin:0 }}>Trading Journal</div>
-                    {conn && <div style={{ display:"flex", alignItems:"center", gap:5, padding:"2px 8px", borderRadius:3, background:"rgba(41,168,255,.06)", border:"1px solid rgba(41,168,255,.15)" }}>
-                      <div style={{ width:5,height:5,borderRadius:"50%",background:conn.sync_status==="live"?"#29a8ff":"#e91ea7",boxShadow:`0 0 4px ${conn.sync_status==="live"?"#29a8ff":"#e91ea7"}`}}/>
-                      <span style={{ fontSize:9, color:C.textDim }}>{conn.display_name}</span>
-                    </div>}
                   </div>
                   <button className="btn bg" style={{ fontSize:10, padding:"4px 10px" }} onClick={() => setPage("journal")}>Full Journal →</button>
                 </div>
 
-                {/* KPI grid */}
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:8, marginBottom:14 }}>
-                  {[
-                    { l:"Win Rate",   v:`${winRate}%`,  c:winRate>=50?C.accent:C.pink, sub:`${wins}W / ${losses}L` },
-                    { l:"Net P&L",    v:`$${totalPnl>=0?"+":""}${totalPnl.toFixed(0)}`, c:totalPnl>=0?C.accent:C.pink, sub:"After commission" },
-                    { l:"Profit Factor",v:pf,           c:parseFloat(pf)>=1?C.accent:C.pink, sub:"Gross ratio" },
-                    { l:"Avg Win",    v:`$${avgWin}`,   c:C.accent, sub:"Per winning trade" },
-                    { l:"Avg Loss",   v:`-$${avgLoss}`, c:C.pink,   sub:"Per losing trade" },
-                    { l:"Avg Duration",v:avgDur,        c:C.text,   sub:"Per closed trade" },
-                  ].map(m => (
-                    <div key={m.l} style={{ textAlign:"center", padding:"10px 6px", background:"rgba(13,16,24,.6)", borderRadius:6, border:`1px solid ${C.border}` }}>
-                      <div style={{ fontSize:15, fontWeight:600, color:m.c, lineHeight:1.1, fontFamily:"JetBrains Mono,monospace" }}>{m.v}</div>
-                      <div style={{ fontSize:9, color:C.textDim, marginTop:3, textTransform:"uppercase", letterSpacing:".04em" }}>{m.l}</div>
-                      <div style={{ fontSize:9, color:C.textDim, marginTop:1 }}>{m.sub}</div>
+                {dashTradesLoading ? (
+                  <div style={{ textAlign:"center", padding:"28px 0", color:C.textDim, fontSize:12 }}>Loading...</div>
+                ) : dashTrades.length === 0 ? (
+                  <div style={{ textAlign:"center", padding:"28px 16px" }}>
+                    <div style={{ fontSize:13, color:C.textMuted, marginBottom:16, lineHeight:1.7 }}>
+                      No trades yet. Connect a broker account for automatic sync or log trades manually.
                     </div>
-                  ))}
-                </div>
+                    <div style={{ display:"flex", gap:8, justifyContent:"center", flexWrap:"wrap" }}>
+                      <button className="btn bp" style={{ fontSize:11, padding:"7px 16px" }} onClick={()=>setPage("broker_accounts")}>Connect Account</button>
+                      <button className="btn bg" style={{ fontSize:11, padding:"7px 16px" }} onClick={()=>setPage("journal")}>Log Manually</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:8, marginBottom:14 }}>
+                      {[
+                        { l:"Win Rate",      v:`${winRate}%`,                                                      c:winRate>50?C.accent:winRate<50?C.pink:C.text, sub:`${wins}W / ${losses}L` },
+                        { l:"Net P&L",       v:`${totalPnl>0?"+":""}${totalPnl===0?"":totalPnl<0?"-":""}$${Math.abs(totalPnl).toFixed(0)}`, c:totalPnl>0?C.accent:totalPnl<0?C.pink:C.text, sub:"After commission" },
+                        { l:"Profit Factor", v:pf,                                                                  c:parseFloat(pf)>1?C.accent:parseFloat(pf)<1?C.pink:C.text, sub:"Gross ratio" },
+                        { l:"Avg Win",       v:wins>0?`$${avgWin}`:"—",                                            c:wins>0?C.accent:C.textDim, sub:"Per winning trade" },
+                        { l:"Avg Loss",      v:losses>0?`-$${avgLoss}`:"—",                                        c:losses>0?C.pink:C.textDim, sub:"Per losing trade" },
+                        { l:"Avg Duration",  v:avgDur,                                                             c:C.text, sub:"Per closed trade" },
+                      ].map(m => (
+                        <div key={m.l} style={{ textAlign:"center", padding:"10px 6px", background:"rgba(13,16,24,.6)", borderRadius:6, border:`1px solid ${C.border}` }}>
+                          <div style={{ fontSize:15, fontWeight:600, color:m.c, lineHeight:1.1, fontFamily:"JetBrains Mono,monospace" }}>{m.v}</div>
+                          <div style={{ fontSize:9, color:C.textDim, marginTop:3, textTransform:"uppercase", letterSpacing:".04em" }}>{m.l}</div>
+                          <div style={{ fontSize:9, color:C.textDim, marginTop:1 }}>{m.sub}</div>
+                        </div>
+                      ))}
+                    </div>
 
-                {/* Recent trades table */}
-                <div style={{ fontSize:10, color:C.textDim, letterSpacing:".06em", textTransform:"uppercase", marginBottom:8 }}>Recent Trades</div>
-                <div style={{ overflowX:"auto" }}>
-                  <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
-                    <thead>
-                      <tr style={{ borderBottom:`1px solid ${C.border}` }}>
-                        {["Instrument","Type","Entry","Exit","Volume","Session","Duration","Comm.","Net P&L"].map(h => (
-                          <th key={h} style={{ padding:"5px 8px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, letterSpacing:".05em", textTransform:"uppercase", whiteSpace:"nowrap" }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recent.map(t => {
-                        const dur = (() => {
-                          if (!t.close_time) return "Open";
-                          const ms = new Date(t.close_time) - new Date(t.open_time);
-                          const m = Math.floor(ms/60000);
-                          return m<60 ? `${m}m` : `${Math.floor(m/60)}h ${m%60}m`;
-                        })();
-                        const net = t.profit + t.commission;
-                        return (
-                          <tr key={t.id} style={{ borderBottom:`1px solid rgba(255,255,255,.04)` }}>
-                            <td style={{ padding:"7px 8px", fontWeight:600, color:C.text }}>{t.instrument}</td>
-                            <td style={{ padding:"7px 8px" }}>
-                              <span style={{ fontSize:10, padding:"2px 6px", borderRadius:3, background:t.trade_type==="Long"?"rgba(41,168,255,.1)":"rgba(233,30,167,.1)", color:t.trade_type==="Long"?C.accent:C.pink, border:`1px solid ${t.trade_type==="Long"?"rgba(41,168,255,.25)":"rgba(233,30,167,.25)"}` }}>{t.trade_type}</span>
-                            </td>
-                            <td style={{ padding:"7px 8px", color:C.textMuted, fontFamily:"JetBrains Mono,monospace", fontSize:10 }}>{t.open_price.toFixed(t.instrument.includes("JPY")||t.instrument.includes("XAU")||t.instrument.includes("NAS")||t.instrument.includes("BTC")?2:5)}</td>
-                            <td style={{ padding:"7px 8px", color:C.textMuted, fontFamily:"JetBrains Mono,monospace", fontSize:10 }}>{t.is_open?"—":t.close_price.toFixed(t.instrument.includes("JPY")||t.instrument.includes("XAU")||t.instrument.includes("NAS")||t.instrument.includes("BTC")?2:5)}</td>
-                            <td style={{ padding:"7px 8px", color:C.textMuted }}>{t.volume}</td>
-                            <td style={{ padding:"7px 8px", color:C.textDim }}>{t.session}</td>
-                            <td style={{ padding:"7px 8px", color:C.textDim, fontFamily:"JetBrains Mono,monospace", fontSize:10 }}>{dur}</td>
-                            <td style={{ padding:"7px 8px", color:C.pink, fontFamily:"JetBrains Mono,monospace", fontSize:10 }}>{t.commission.toFixed(2)}</td>
-                            <td style={{ padding:"7px 8px", fontWeight:600, fontFamily:"JetBrains Mono,monospace", color:net>=0?C.accent:C.pink }}>
-                              {net>=0?"+":""}{net.toFixed(2)}
-                            </td>
+                    <div style={{ fontSize:10, color:C.textDim, letterSpacing:".06em", textTransform:"uppercase", marginBottom:8 }}>Recent Trades</div>
+                    <div style={{ overflowX:"auto" }}>
+                      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:11 }}>
+                        <thead>
+                          <tr style={{ borderBottom:`1px solid ${C.border}` }}>
+                            {["Instrument","Type","Entry","Exit","P&L"].map(h => (
+                              <th key={h} style={{ padding:"5px 8px", textAlign:"left", fontSize:9, color:C.textDim, fontWeight:500, letterSpacing:".05em", textTransform:"uppercase", whiteSpace:"nowrap" }}>{h}</th>
+                            ))}
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                        </thead>
+                        <tbody>
+                          {recent.map(t => {
+                            const net = (t.profit||0) + (t.commission||0);
+                            const isLong = (t.trade_type||"").toLowerCase()==="long"||(t.direction||"").toLowerCase()==="long";
+                            return (
+                              <tr key={t.id} style={{ borderBottom:`1px solid rgba(255,255,255,.04)` }}>
+                                <td style={{ padding:"7px 8px", fontWeight:600, color:C.text }}>{t.instrument||t.symbol||"—"}</td>
+                                <td style={{ padding:"7px 8px" }}>
+                                  <span style={{ fontSize:10, padding:"2px 6px", borderRadius:3, background:isLong?"rgba(41,168,255,.1)":"rgba(233,30,167,.1)", color:isLong?C.accent:C.pink, border:`1px solid ${isLong?"rgba(41,168,255,.25)":"rgba(233,30,167,.25)"}` }}>{isLong?"Long":"Short"}</span>
+                                </td>
+                                <td style={{ padding:"7px 8px", color:C.textMuted, fontFamily:"JetBrains Mono,monospace", fontSize:10 }}>{t.open_price?.toFixed?.(5)||"—"}</td>
+                                <td style={{ padding:"7px 8px", color:C.textMuted, fontFamily:"JetBrains Mono,monospace", fontSize:10 }}>{t.is_open?"Open":t.close_price?.toFixed?.(5)||"—"}</td>
+                                <td style={{ padding:"7px 8px", fontWeight:600, fontFamily:"JetBrains Mono,monospace", color:net>0?C.accent:net<0?C.pink:C.text }}>
+                                  {net>0?"+":""}{net.toFixed(2)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </div>
             );
           })()}
@@ -5001,9 +5009,7 @@ const EconomicCalendar = () => {
   );
 };
 
-const COMMUNITY_SEED = [
-  { id:1, u:"Admin", tag:"Admin", tc:"td", avatar:"A", time:"00:00", text:"Welcome to the Fortitude community. Keep all discussions analytical and framework-based.", reactions:[] },
-];
+const COMMUNITY_SEED = [];
 
 const AVATAR_COLORS = ["#29a8ff","#e91ea7","#c8a96e","#7c6aff","#3ecf8e","#ff6b6b"];
 
