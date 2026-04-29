@@ -377,6 +377,126 @@ const DIAL_CODES = [
 // ── Country dial codes (top trading nations + comprehensive list) ─────────────
 
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// RESET PASSWORD PAGE — renders when user lands with ?token= in URL
+// ═══════════════════════════════════════════════════════════════════════════════
+const ResetPassword = ({ token, onDone }) => {
+  const [pass,    setPass]    = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [status,  setStatus]  = useState("idle"); // idle | loading | done | error
+  const [msg,     setMsg]     = useState("");
+
+  const handleReset = async () => {
+    if (!pass || pass.length < 8)              { setMsg("Password must be at least 8 characters."); return; }
+    if (!/[A-Z]/.test(pass))                   { setMsg("Password must contain at least one uppercase letter."); return; }
+    if (!/[0-9]/.test(pass))                   { setMsg("Password must contain at least one number."); return; }
+    if (pass !== confirm)                      { setMsg("Passwords do not match."); return; }
+    setMsg(""); setStatus("loading");
+    const data = await api.post("/auth/reset-password", { token, password: pass });
+    if (data.success) {
+      setStatus("done");
+      // Clear token from URL without reload
+      window.history.replaceState({}, "", "/");
+    } else {
+      setStatus("error");
+      setMsg(data.error?.message || "Reset failed. The link may have expired.");
+    }
+  };
+
+  const card = { position:"relative", zIndex:1, width:"min(420px,94vw)", padding:"clamp(24px,5vw,40px)", background:"rgba(13,16,24,.93)", border:"1px solid #18202e", borderRadius:10, backdropFilter:"blur(16px)", boxShadow:"0 0 60px rgba(41,168,255,.07)" };
+  const INP  = { className:"inp", style:{ width:"100%" } };
+  const LBL  = { style:{ fontSize:11, color:"#7a8fa8", display:"block", marginBottom:5, letterSpacing:".06em", textTransform:"uppercase" } };
+
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
+      <BgSVG/>
+      <div style={{ position:"absolute", inset:0, background:"rgba(6,8,16,.78)" }}/>
+      <div className="fi" style={card}>
+        <div style={{ textAlign:"center", marginBottom:28 }}>
+          <div className="df" style={{ fontFamily:"'Counter-Strike',sans-serif", fontSize:28, fontWeight:300, letterSpacing:".06em", color:"#dce6f5" }}>FORTITUDE</div>
+          <div style={{ fontSize:10, color:"#7a8fa8", letterSpacing:".18em", textTransform:"uppercase", marginTop:4 }}>Reset Password</div>
+        </div>
+
+        {status === "done" ? (
+          <div style={{ textAlign:"center" }}>
+            <IC n="check" s={36} c={C.accent}/>
+            <div style={{ fontSize:16, fontWeight:500, color:"#eef2f8", marginTop:12, marginBottom:8 }}>Password updated</div>
+            <div style={{ fontSize:13, color:"#7a8fa8", marginBottom:24 }}>Your password has been reset. You can now sign in.</div>
+            <button className="btn bp" style={{ width:"100%", padding:12 }} onClick={onDone}>Sign In</button>
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+            {msg && <div style={{ padding:"10px 14px", background:"rgba(233,30,167,.08)", border:"1px solid #e91ea7", borderRadius:6, fontSize:12, color:"#e91ea7" }}>{msg}</div>}
+            <div>
+              <label {...LBL}>New Password</label>
+              <input {...INP} type="password" placeholder="Min 8 chars, 1 uppercase, 1 number" value={pass} onChange={e => setPass(e.target.value)}/>
+              {pass && (
+                <div style={{ display:"flex", gap:8, marginTop:6 }}>
+                  {[["8+ chars", pass.length>=8], ["Uppercase", /[A-Z]/.test(pass)], ["Number", /[0-9]/.test(pass)]].map(([l,ok]) => (
+                    <span key={l} style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:ok?"rgba(41,168,255,.1)":"rgba(255,255,255,.04)", color:ok?"#29a8ff":"#7a8fa8", border:`1px solid ${ok?"rgba(41,168,255,.3)":"#18202e"}` }}>{ok?"✓":""} {l}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div><label {...LBL}>Confirm Password</label><input {...INP} type="password" placeholder="Repeat new password" value={confirm} onChange={e => setConfirm(e.target.value)} onKeyDown={e => e.key==="Enter" && handleReset()}/></div>
+            <button className="btn bp" style={{ width:"100%", padding:12, opacity:status==="loading"?.6:1 }} onClick={handleReset} disabled={status==="loading"}>
+              {status === "loading" ? "Updating…" : "Set New Password"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VERIFY EMAIL PAGE — renders when user lands with ?verify_token= in URL
+// ═══════════════════════════════════════════════════════════════════════════════
+const VerifyEmailPage = ({ token, onDone }) => {
+  const [status, setStatus] = useState("loading");
+  const [msg,    setMsg]    = useState("");
+
+  useEffect(() => {
+    api.post("/auth/verify-email", { token }).then(data => {
+      if (data.success) {
+        setStatus("done");
+        window.history.replaceState({}, "", "/");
+      } else {
+        setStatus("error");
+        setMsg(data.error?.message || "Verification failed. The link may have expired.");
+      }
+    }).catch(() => { setStatus("error"); setMsg("Unable to connect. Please try again."); });
+  }, [token]);
+
+  const card = { position:"relative", zIndex:1, width:"min(420px,94vw)", padding:"clamp(24px,5vw,40px)", background:"rgba(13,16,24,.93)", border:"1px solid #18202e", borderRadius:10, backdropFilter:"blur(16px)", boxShadow:"0 0 60px rgba(41,168,255,.07)", textAlign:"center" };
+
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
+      <BgSVG/>
+      <div style={{ position:"absolute", inset:0, background:"rgba(6,8,16,.78)" }}/>
+      <div className="fi" style={card}>
+        <div className="df" style={{ fontFamily:"'Counter-Strike',sans-serif", fontSize:28, fontWeight:300, letterSpacing:".06em", color:"#dce6f5", marginBottom:28 }}>FORTITUDE</div>
+        {status === "loading" && <>
+          <IC n="zap" s={36} c={C.accent}/>
+          <div style={{ fontSize:15, color:"#eef2f8", marginTop:12 }}>Verifying your email…</div>
+        </>}
+        {status === "done" && <>
+          <IC n="check" s={36} c={C.accent}/>
+          <div style={{ fontSize:16, fontWeight:500, color:"#eef2f8", marginTop:12, marginBottom:8 }}>Email verified</div>
+          <div style={{ fontSize:13, color:"#7a8fa8", marginBottom:24 }}>Your account is now fully active.</div>
+          <button className="btn bp" style={{ width:"100%", padding:12 }} onClick={onDone}>Go to Platform</button>
+        </>}
+        {status === "error" && <>
+          <IC n="warning" s={36} c={C.pink}/>
+          <div style={{ fontSize:16, fontWeight:500, color:"#eef2f8", marginTop:12, marginBottom:8 }}>Verification failed</div>
+          <div style={{ fontSize:13, color:"#e91ea7", marginBottom:24 }}>{msg}</div>
+          <button className="btn bg" style={{ width:"100%", padding:12 }} onClick={onDone}>Back to Sign In</button>
+        </>}
+      </div>
+    </div>
+  );
+};
+
 const Login = ({ onLogin }) => {
   const [mode,      setMode]      = useState("login"); // login | register
   const [step,      setStep]      = useState(1);       // register step 1 or 2
@@ -400,6 +520,9 @@ const Login = ({ onLogin }) => {
   const [geoLoaded, setGeoLoaded] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
+
+  // Capture referral code from URL (?ref=CODE)
+  const [refCode] = useState(() => new URLSearchParams(window.location.search).get("ref") || "");
 
   // Auto-detect country from IP on mount
   useEffect(() => {
@@ -453,15 +576,16 @@ const Login = ({ onLogin }) => {
     try {
       const fullPhone = phone ? `${dialCode.dial}${phone.replace(/^0+/, "")}` : "";
       const regData = await api.post("/auth/register", {
-        email:        regEmail,
-        password:     regPass,
-        first_name:   firstName.trim(),
-        last_name:    lastName.trim(),
-        phone:        fullPhone || null,
-        country:      country.name,
-        country_code: country.code,
-        dialing_code: dialCode.dial,
-        source:       "web",
+        email:          regEmail,
+        password:       regPass,
+        first_name:     firstName.trim(),
+        last_name:      lastName.trim(),
+        phone:          fullPhone || null,
+        country:        country.name,
+        country_code:   country.code,
+        dialing_code:   dialCode.dial,
+        source:         "web",
+        referral_code:  refCode || undefined,
       });
       if (regData.success) {
         // Auto-login immediately after registration
@@ -1890,6 +2014,74 @@ const AIInsightFeed = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// ONBOARDING MODAL — shown once to new users on first login
+// ═══════════════════════════════════════════════════════════════════════════════
+const OnboardingModal = ({ user, setPage, onClose }) => {
+  const [step, setStep] = useState(0);
+  const firstName = user?.first_name || "there";
+
+  const STEPS = [
+    {
+      icon: "dashboard",
+      title: `Welcome to Fortitude, ${firstName}.`,
+      body: "You now have access to professional-grade trade analytics, behavioral intelligence, and AI-powered performance coaching. Let's get your data in so the platform can start working for you.",
+      primaryLabel: "Get Started →",
+      primaryAction: () => setStep(1),
+      skipLabel: null,
+    },
+    {
+      icon: "broker",
+      title: "Connect your broker",
+      body: "The fastest way to get started is to connect your broker account directly. We support cTrader, MetaTrader 4, and MetaTrader 5. Your trades sync automatically.",
+      primaryLabel: "Connect Broker",
+      primaryAction: () => { onClose(); setPage("broker_accounts"); },
+      skipLabel: "I'll import a CSV instead →",
+      skipAction: () => setStep(2),
+    },
+    {
+      icon: "upload",
+      title: "Import a CSV file",
+      body: "Export your trade history from your broker platform and upload it here. We auto-detect the format for MT4, MT5, cTrader, TradeLocker, DXTrade, FTMO, and TradingView.",
+      primaryLabel: "Go to Import CSV",
+      primaryAction: () => { onClose(); setPage("journal"); },
+      skipLabel: "I'll do this later →",
+      skipAction: onClose,
+    },
+  ];
+
+  const s = STEPS[step];
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(4,6,12,.88)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(6px)", padding:16 }}>
+      <div className="mc" style={{ maxWidth:480, width:"100%", padding:"36px 40px", position:"relative" }}>
+        {/* Progress dots */}
+        <div style={{ display:"flex", gap:6, justifyContent:"center", marginBottom:28 }}>
+          {STEPS.map((_,i) => (
+            <div key={i} style={{ width:i===step?20:6, height:6, borderRadius:3, background:i===step?C.accent:i<step?"rgba(41,168,255,.3)":"rgba(255,255,255,.1)", transition:"all .3s" }}/>
+          ))}
+        </div>
+        <div style={{ textAlign:"center", marginBottom:24 }}>
+          <IC n={s.icon} s={36} c={C.accent}/>
+          <h2 style={{ fontSize:20, fontWeight:600, color:C.text, margin:"16px 0 10px", lineHeight:1.3 }}>{s.title}</h2>
+          <p style={{ fontSize:13, color:C.textMuted, lineHeight:1.7, margin:0 }}>{s.body}</p>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          <button className="btn bp" style={{ width:"100%", padding:13, fontSize:13 }} onClick={s.primaryAction}>
+            {s.primaryLabel}
+          </button>
+          {s.skipLabel && (
+            <button className="btn bg" style={{ width:"100%", padding:11, fontSize:12, color:C.textMuted }} onClick={s.skipAction || onClose}>
+              {s.skipLabel}
+            </button>
+          )}
+        </div>
+        <button onClick={onClose} style={{ position:"absolute", top:16, right:16, background:"none", border:"none", cursor:"pointer", color:C.textDim, fontSize:18, lineHeight:1 }}>✕</button>
+      </div>
+    </div>
+  );
+};
+
 const Dashboard = ({ setPage, currentTier, user, engineTrades = [] }) => {
   const revenge    = computeRevengeScore(engineTrades);
   const riskCons   = computeRiskConsistency(engineTrades);
@@ -2017,7 +2209,7 @@ const Dashboard = ({ setPage, currentTier, user, engineTrades = [] }) => {
                   </div>
                 ) : (
                   <>
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:8, marginBottom:14 }}>
+                    <div className="dash-stats-grid" style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:8, marginBottom:14 }}>
                       {[
                         { l:"Win Rate",      v:`${winRate}%`,                                                      c:winRate>=60?C.accent:winRate<=40?C.pink:C.text, sub:`${wins}W / ${losses}L` },
                         { l:"Net P&L",       v:`${totalPnl>0?"+":""}${totalPnl===0?"":totalPnl<0?"-":""}$${Math.abs(totalPnl).toFixed(0)}`, c:totalPnl>0?C.accent:totalPnl<0?C.pink:C.text, sub:"After commission" },
@@ -2588,7 +2780,7 @@ const BrokerAccounts = ({ setPage }) => {
                 <div style={{width:7,height:7,borderRadius:"50%",background:conn.is_active?"#29a8ff":C.pink,boxShadow:conn.is_active?"0 0 6px #29a8ff80":"none"}}/>
                 <span style={{fontSize:11,color:conn.is_active?"#29a8ff":C.pink}}>{conn.is_active?"Active":"Inactive"}</span>
               </div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <div className="broker-card-actions" style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {conn.broker_type==="ctrader"&&(
                   <button className="btn bg" style={{fontSize:11,padding:"5px 12px",display:"flex",alignItems:"center",gap:5,opacity:syncing[conn.id]?0.6:1}} disabled={syncing[conn.id]} onClick={()=>syncConn(conn.id)}>
                     <IC n="refresh" s={11} c={C.textMuted}/>{syncing[conn.id]?"Syncing...":"Sync Now"}
@@ -3111,7 +3303,7 @@ const Journal = ({ setPage, currentTier, user }) => {
       {/* ════════ OVERVIEW ════════ */}
       {view==="overview"&&(
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+          <div className="journal-stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
             {[
               {l:"Win Rate",     v:`${winRate}%`,          sub:`${wins}W · ${losses}L · ${breakeven}BE`,   c:parseFloat(winRate)>=60?C.accent:parseFloat(winRate)<=40?C.pink:C.text},
               {l:"Net P&L",      v:`${totalPnl>0?"+":""}$${Math.abs(totalPnl).toFixed(2)}`, sub:"All closed trades", c:totalPnl>0?C.accent:totalPnl<0?C.pink:C.text},
@@ -3129,7 +3321,7 @@ const Journal = ({ setPage, currentTier, user }) => {
               </div>
             ))}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+          <div className="streak-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
             {[
               {l:"Current Streak",    v:curStreak>0?`+${curStreak}W`:curStreak<0?`${Math.abs(curStreak)}L`:"—", c:curStreak>0?C.accent:curStreak<0?C.pink:C.textDim},
               {l:"Best Win Streak",   v:`${maxWinStreak}W`,  c:C.text},
@@ -3205,7 +3397,7 @@ const Journal = ({ setPage, currentTier, user }) => {
               <IC n="cal" s={13} c={C.accent}/>
               <div className="sl" style={{margin:0}}>Performance by Day of Week</div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8}}>
+            <div className="chart-scroll"><div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,minWidth:320}}>
               {byDow.map(d=>{
                 const maxAbs=Math.max(...byDow.map(x=>Math.abs(x.pnl)),1);
                 const barH=Math.max(4,Math.abs(d.pnl/maxAbs)*80);
@@ -3220,7 +3412,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                   </div>
                 );
               })}
-            </div>
+            </div></div>
           </div>
           {/* Hourly heatmap */}
           <div className="mc" style={{padding:"16px 20px"}}>
@@ -3228,7 +3420,7 @@ const Journal = ({ setPage, currentTier, user }) => {
               <IC n="clock" s={13} c={C.accent}/>
               <div className="sl" style={{margin:0}}>Trade Activity by Hour (UTC)</div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(24,1fr)",gap:3}}>
+            <div className="chart-scroll"><div style={{display:"grid",gridTemplateColumns:"repeat(24,1fr)",gap:3,minWidth:480}}>
               {byHour.map(h=>{
                 const maxC=Math.max(...byHour.map(x=>x.count),1);
                 const op=h.count>0?0.15+0.7*(h.count/maxC):0.04;
@@ -3240,7 +3432,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                   </div>
                 );
               })}
-            </div>
+            </div></div>
             <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
               {[0,6,12,18,23].map(h=>(
                 <span key={h} style={{fontSize:8,color:C.textDim}}>{String(h).padStart(2,"0")}:00</span>
@@ -3487,7 +3679,7 @@ const Journal = ({ setPage, currentTier, user }) => {
           )}
           {(csvStep==="preview"||csvStep==="importing")&&csvTrades?.length>0&&(
             <div className="mc" style={{padding:"20px 22px"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:12,flexWrap:"wrap"}}>
+              <div className="csv-preview-header" style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:12,flexWrap:"wrap"}}>
                 <div>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
                     <div className="sl" style={{margin:0}}>Preview — {csvTrades.length} trades detected</div>
@@ -9192,7 +9384,7 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
       </div>
 
       {/* Profile strip */}
-      <div className="mc" style={{ marginBottom:18,borderColor:tier.color,display:"flex",gap:18,alignItems:"center",padding:"14px 20px" }}>
+      <div className="mc profile-strip" style={{ marginBottom:18,borderColor:tier.color,display:"flex",gap:18,alignItems:"center",padding:"14px 20px" }}>
         <div style={{ width:44,height:44,borderRadius:"50%",background:`${tier.color}18`,border:`1px solid ${tier.color}50`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
           <span style={{ fontSize:19,color:tier.color,fontFamily:"Inter,sans-serif",fontWeight:700 }}>{(user?.first_name?.[0] || user?.email?.[0] || "U").toUpperCase()}</span>
         </div>
@@ -9200,7 +9392,7 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
           <div style={{ fontSize:14,fontWeight:500,color:C.text,marginBottom:2 }}>{user?.first_name || ""} {user?.last_name || ""}</div>
           <div style={{ fontSize:12,color:C.textMuted }}>{user?.email || ""}</div>
         </div>
-        <div style={{ marginLeft:"auto",display:"flex",gap:10,alignItems:"center" }}>
+        <div className="profile-strip-actions" style={{ marginLeft:"auto",display:"flex",gap:10,alignItems:"center" }}>
           <div style={{ textAlign:"right",marginRight:8 }}>
             <div style={{ fontSize:10,color:C.textDim,letterSpacing:".08em",textTransform:"uppercase" }}>Current Plan</div>
             <div style={{ fontSize:13,fontWeight:600,color:tier.color }}>{tier.label} — {tier.price}{tier.billing}</div>
@@ -10763,7 +10955,8 @@ export default function App() {
   const [subStatus,    setSubStatus]    = useState("inactive");
   const [token,        setToken]        = useState(null);
   const [user,         setUser]         = useState(null);
-  const [engineTrades, setEngineTrades] = useState([]);
+  const [engineTrades,  setEngineTrades]  = useState([]);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     window.__fortitudeNav = setPage;
@@ -10818,6 +11011,12 @@ export default function App() {
 
   const handleLogin = ({ token: t, user }) => {
     setToken(t); setUser(user); setAuthed(true);
+    // Show onboarding modal once per account
+    const key = `fis_onboarded_${user?.id || ""}`;
+    if (!localStorage.getItem(key)) {
+      setShowOnboarding(true);
+      localStorage.setItem(key, "1");
+    }
     setTier(mapTier(user.membership_tier));
     setSubStatus(["active","trial"].includes(user.subscription_status) ? "active" : "inactive");
     api.get("/membership/access", t).then(d => {
@@ -10962,6 +11161,14 @@ export default function App() {
     return <P setPage={setPage} currentTier={tier} aiUsed={aiUsed} user={user} engineTrades={engineTrades}/>;
   };
 
+  // Handle magic-link URL params before auth check
+  const _urlParams = new URLSearchParams(window.location.search);
+  const _resetToken  = _urlParams.get("token") && window.location.pathname.includes("reset") ? _urlParams.get("token") : null;
+  const _verifyToken = _urlParams.get("verify_token") || (_urlParams.get("token") && window.location.pathname.includes("verify") ? _urlParams.get("token") : null);
+
+  if (_resetToken)  return <><style>{STYLES}</style><ResetPassword  token={_resetToken}  onDone={() => window.history.replaceState({}, "", "/")}/></>;
+  if (_verifyToken) return <><style>{STYLES}</style><VerifyEmailPage token={_verifyToken} onDone={() => window.history.replaceState({}, "", "/")}/></>;
+
   if (!authed) return <><style>{STYLES}</style><Login onLogin={handleLogin}/></>;
 
   const currentTierMeta = TIERS[tier] || TIERS["free"] || Object.values(TIERS)[0];
@@ -10994,12 +11201,27 @@ export default function App() {
           /* Grids — single column */
           .dash-grid,.analyses-grid,.community-grid{grid-template-columns:1fr!important;gap:10px!important}
           .session-grid{grid-template-columns:1fr!important;gap:8px!important}
+          .broker-detail-grid{grid-template-columns:1fr!important}
           /* Grids — two column (compact) */
           .stats-grid{grid-template-columns:1fr 1fr!important;gap:8px!important}
           @media(max-width:340px){.stats-grid{grid-template-columns:1fr!important}}
           .pricing-grid{grid-template-columns:1fr 1fr!important;gap:8px!important}
           @media(max-width:400px){.pricing-grid{grid-template-columns:1fr!important}}
           .liq-grid{grid-template-columns:1fr 1fr!important;gap:8px!important}
+          /* Stats cards — 2 col on mobile */
+          .journal-stats-grid{grid-template-columns:1fr 1fr!important;gap:8px!important}
+          .dash-stats-grid{grid-template-columns:1fr 1fr!important;gap:8px!important}
+          /* Streaks — 1 col on small screens */
+          .streak-grid{grid-template-columns:1fr!important;gap:8px!important}
+          /* Charts that need horizontal scroll on mobile */
+          .chart-scroll{overflow-x:auto!important;-webkit-overflow-scrolling:touch}
+          /* Broker cards */
+          .broker-card-actions{flex-direction:column!important;gap:6px!important}
+          /* Account settings */
+          .profile-strip{flex-direction:column!important;align-items:flex-start!important;gap:10px!important}
+          .profile-strip-actions{flex-direction:row!important;flex-wrap:wrap!important;gap:8px!important}
+          /* Import preview header */
+          .csv-preview-header{flex-direction:column!important;align-items:flex-start!important}
 
           /* Hide elements that don't work on mobile */
           .dash-cal-mobile{display:none!important}
@@ -11240,6 +11462,17 @@ export default function App() {
         {/* Main content */}
         <main className="main-content" style={{ flex:1,padding:"28px 32px",overflowY:"auto",overflowX:"hidden",position:"relative",zIndex:1,WebkitOverflowScrolling:"touch",overscrollBehavior:"contain",minHeight:0 }}>
           <div className="mob-spacer"/>
+          {/* Email verification banner */}
+          {user && user.email_verified === false && (
+            <div style={{ marginBottom:14, padding:"10px 16px", background:"rgba(41,168,255,.07)", border:"1px solid rgba(41,168,255,.2)", borderRadius:7, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+              <IC n="info" s={14} c={C.accent}/>
+              <span style={{ fontSize:12, color:"#b8c8d8", flex:1 }}>Please verify your email address. Check your inbox for a link from Fortitude.</span>
+              <button className="btn bg" style={{ fontSize:11, padding:"5px 12px", whiteSpace:"nowrap" }}
+                onClick={() => api.post("/auth/resend-verification", {}, token).then(() => {}).catch(() => {})}>
+                Resend
+              </button>
+            </div>
+          )}
           {page==="intelligence" && canAccess(tier,"intelligence") && (
             <div style={{ marginBottom:16 }}>
               <AIUsageMeter tier={tier} used={aiUsed} setPage={setPage}/>
@@ -11272,6 +11505,15 @@ export default function App() {
         </div>
 
       </div>
+
+      {/* Onboarding modal */}
+      {showOnboarding && (
+        <OnboardingModal
+          user={user}
+          setPage={setPage}
+          onClose={() => setShowOnboarding(false)}
+        />
+      )}
     </>
   );
 }
