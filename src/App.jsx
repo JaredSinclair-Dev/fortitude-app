@@ -497,6 +497,35 @@ const VerifyEmailPage = ({ token, onDone }) => {
   );
 };
 
+const VerifyBanner = ({ token }) => {
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  const resend = async () => {
+    setSending(true);
+    try {
+      await api.post("/auth/resend-verification", {}, token);
+      setSent(true);
+    } catch { setSent(true); }
+    finally { setSending(false); }
+  };
+
+  return (
+    <div style={{ marginBottom:14, padding:"10px 16px", background:"rgba(41,168,255,.07)", border:"1px solid rgba(41,168,255,.2)", borderRadius:7, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+      <IC n="info" s={14} c={C.accent}/>
+      <span style={{ fontSize:12, color:"#b8c8d8", flex:1 }}>
+        {sent ? "Verification email sent — check your inbox." : "Please verify your email address. Check your inbox for a link from Fortitude."}
+      </span>
+      {!sent && (
+        <button className="btn bg" style={{ fontSize:11, padding:"5px 12px", whiteSpace:"nowrap", opacity:sending?0.6:1 }}
+          onClick={resend} disabled={sending}>
+          {sending ? "Sending…" : "Resend"}
+        </button>
+      )}
+    </div>
+  );
+};
+
 const Login = ({ onLogin }) => {
   const [mode,      setMode]      = useState("login"); // login | register
   const [step,      setStep]      = useState(1);       // register step 1 or 2
@@ -11464,14 +11493,7 @@ export default function App() {
           <div className="mob-spacer"/>
           {/* Email verification banner */}
           {user && user.email_verified === false && (
-            <div style={{ marginBottom:14, padding:"10px 16px", background:"rgba(41,168,255,.07)", border:"1px solid rgba(41,168,255,.2)", borderRadius:7, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
-              <IC n="info" s={14} c={C.accent}/>
-              <span style={{ fontSize:12, color:"#b8c8d8", flex:1 }}>Please verify your email address. Check your inbox for a link from Fortitude.</span>
-              <button className="btn bg" style={{ fontSize:11, padding:"5px 12px", whiteSpace:"nowrap" }}
-                onClick={() => api.post("/auth/resend-verification", {}, token).then(() => {}).catch(() => {})}>
-                Resend
-              </button>
-            </div>
+            <VerifyBanner token={token} />
           )}
           {page==="intelligence" && canAccess(tier,"intelligence") && (
             <div style={{ marginBottom:16 }}>
