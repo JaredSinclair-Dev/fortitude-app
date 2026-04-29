@@ -11207,6 +11207,16 @@ export default function App() {
   const _resetToken  = _urlParams.get("token") && window.location.pathname.includes("reset") ? _urlParams.get("token") : null;
   const _verifyToken = _urlParams.get("verify_token") || (_urlParams.get("token") && window.location.pathname.includes("verify") ? _urlParams.get("token") : null);
 
+  // cTrader OAuth popup callback — extract code and post to parent, then close
+  if (window.location.pathname.includes("/broker/ctrader/callback")) {
+    const _code = _urlParams.get("code");
+    if (_code && window.opener) {
+      window.opener.postMessage({ type: "CTRADER_OAUTH_CODE", code: _code }, window.location.origin);
+      window.close();
+    }
+    return null;
+  }
+
   if (_resetToken)  return <><style>{STYLES}</style><ResetPassword  token={_resetToken}  onDone={() => window.location.replace("/")}/></>;
   if (_verifyToken) return <><style>{STYLES}</style><VerifyEmailPage token={_verifyToken} onDone={() => window.location.replace("/")}/></>;
 
