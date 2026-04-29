@@ -459,8 +459,12 @@ const VerifyEmailPage = ({ token, onDone }) => {
   useEffect(() => {
     api.post("/auth/verify-email", { token }).then(data => {
       if (data.success) {
+        // Update stored user so banner disappears on return
+        try {
+          const u = JSON.parse(localStorage.getItem("fis_user") || "{}");
+          localStorage.setItem("fis_user", JSON.stringify({ ...u, email_verified: true }));
+        } catch {}
         setStatus("done");
-        window.history.replaceState({}, "", "/");
       } else {
         setStatus("error");
         setMsg(data.error?.message || "Verification failed. The link may have expired.");
@@ -11195,8 +11199,8 @@ export default function App() {
   const _resetToken  = _urlParams.get("token") && window.location.pathname.includes("reset") ? _urlParams.get("token") : null;
   const _verifyToken = _urlParams.get("verify_token") || (_urlParams.get("token") && window.location.pathname.includes("verify") ? _urlParams.get("token") : null);
 
-  if (_resetToken)  return <><style>{STYLES}</style><ResetPassword  token={_resetToken}  onDone={() => window.history.replaceState({}, "", "/")}/></>;
-  if (_verifyToken) return <><style>{STYLES}</style><VerifyEmailPage token={_verifyToken} onDone={() => window.history.replaceState({}, "", "/")}/></>;
+  if (_resetToken)  return <><style>{STYLES}</style><ResetPassword  token={_resetToken}  onDone={() => window.location.replace("/")}/></>;
+  if (_verifyToken) return <><style>{STYLES}</style><VerifyEmailPage token={_verifyToken} onDone={() => window.location.replace("/")}/></>;
 
   if (!authed) return <><style>{STYLES}</style><Login onLogin={handleLogin}/></>;
 
