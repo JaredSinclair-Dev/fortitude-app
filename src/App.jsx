@@ -11016,6 +11016,14 @@ export default function App() {
             setAiUsed(d.data.ai?.used || 0);
           }
         }).catch(()=>{});
+        // Refresh user profile to pick up server-side changes (e.g. email_verified)
+        api.get("/auth/me", t).then(d => {
+          if (d.success && d.data?.user) {
+            const fresh = { ...user, ...d.data.user };
+            localStorage.setItem("fis_user", JSON.stringify(fresh));
+            setUser(fresh);
+          }
+        }).catch(()=>{});
       } catch { localStorage.removeItem("fis_token"); localStorage.removeItem("fis_user"); }
     }
   }, []);
