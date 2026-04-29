@@ -989,10 +989,11 @@ function computeRevengeScore(trades) {
 
 // ── PART 2: Risk Consistency Score ───────────────────────────────────────────
 function computeRiskConsistency(trades) {
+  if (!trades.length) return { score: 0, avg: "0.00", stdDev: "0.00" };
   const sizes = trades.map(t=>t.size);
   const avg = sizes.reduce((a,b)=>a+b,0)/sizes.length;
-  const stdDev = Math.sqrt(sizes.reduce((a,b)=>a+Math.pow(b-avg,2),0)/sizes.length);
-  const score = Math.max(0, Math.round(100 - (stdDev/avg)*100));
+  const stdDev = avg > 0 ? Math.sqrt(sizes.reduce((a,b)=>a+Math.pow(b-avg,2),0)/sizes.length) : 0;
+  const score = avg > 0 ? Math.max(0, Math.round(100 - (stdDev/avg)*100)) : 0;
   return { score, avg: avg.toFixed(2), stdDev: stdDev.toFixed(2) };
 }
 
@@ -1013,14 +1014,16 @@ function computeEquityStability(curve) {
 
 // ── PART 5: Performance Discipline Index (PDI) ───────────────────────────────
 function computeOvertradingScore(trades) {
+  if (!trades.length) return { score: 0, todayCount: 0, avgPerDay: "0.0", sessionCounts: {} };
+  const todayStr = new Date().toISOString().slice(0,10);
   const days = {};
   trades.forEach(t => {
-    const d = t.time.slice(0,10);
-    days[d] = (days[d]||0)+1;
+    const d = (t.time||"").slice(0,10);
+    if (d) days[d] = (days[d]||0)+1;
   });
   const dayVals = Object.values(days);
-  const avgPerDay = dayVals.reduce((a,b)=>a+b,0)/dayVals.length;
-  const today = trades.filter(t=>t.time.startsWith("2026-02-23")).length;
+  const avgPerDay = dayVals.length ? dayVals.reduce((a,b)=>a+b,0)/dayVals.length : 1;
+  const today = trades.filter(t=>(t.time||"").startsWith(todayStr)).length;
   const todayDev = today/avgPerDay;
   const sessionCounts = {};
   trades.forEach(t=>{sessionCounts[t.session]=(sessionCounts[t.session]||0)+1;});
@@ -1214,18 +1217,19 @@ function computeBiasFlags(trades) {
 
 // ── PART 2: Decision Fatigue Index ───────────────────────────────────────────
 function computeFatigueIndex(trades) {
-  const today = trades.filter(t => t.time.startsWith("2026-02-23"));
-  const sessionTrades = trades.filter(t => t.session === "London" || t.session === "NY");
+  if (!trades.length) return { score: 0, label: "Focused", color: C.accent, todayTrades: 0, riskShift: "0.0", lossCluster: 0 };
+  const todayStr = new Date().toISOString().slice(0,10);
+  const today = trades.filter(t => (t.time||"").startsWith(todayStr));
 
   // Trades per hour in last session
-  const avgDailyTrades = trades.length / 14; // 14 active days
-  const todayRate = today.length / avgDailyTrades;
+  const avgDailyTrades = trades.length / 14;
+  const todayRate = avgDailyTrades > 0 ? today.length / avgDailyTrades : 0;
 
   // Risk consistency in last 5 trades
   const last5 = trades.slice(-5);
-  const avgR5 = last5.reduce((a,t) => a + t.size, 0) / 5;
-  const stdR5 = Math.sqrt(last5.reduce((a,t) => a + Math.pow(t.size - avgR5, 2), 0) / 5);
-  const riskShift = (stdR5 / avgR5) * 100;
+  const avgR5 = last5.length ? last5.reduce((a,t) => a + t.size, 0) / last5.length : 0;
+  const stdR5 = avgR5 > 0 ? Math.sqrt(last5.reduce((a,t) => a + Math.pow(t.size - avgR5, 2), 0) / last5.length) : 0;
+  const riskShift = avgR5 > 0 ? (stdR5 / avgR5) * 100 : 0;
 
   // Loss clustering in last 5
   const recentLosses = last5.filter(t => !t.win).length;
@@ -1886,10 +1890,10 @@ const AIInsightFeed = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
-const Dashboard = ({ setPage, currentTier, user }) => {
-  const revenge    = computeRevengeScore(TRADE_DATA);
-  const riskCons   = computeRiskConsistency(TRADE_DATA);
-  const overtrading= computeOvertradingScore(TRADE_DATA);
+const Dashboard = ({ setPage, currentTier, user, engineTrades = [] }) => {
+  const revenge    = computeRevengeScore(engineTrades);
+  const riskCons   = computeRiskConsistency(engineTrades);
+  const overtrading= computeOvertradingScore(engineTrades);
   const equity     = computeEquityStability([]);
   const pdi        = computePDI(riskCons.score, revenge.score, overtrading.score, equity.score);
   const pdiMeta    = pdiLabel(pdi);
@@ -2015,11 +2019,11 @@ const Dashboard = ({ setPage, currentTier, user }) => {
                   <>
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:8, marginBottom:14 }}>
                       {[
-                        { l:"Win Rate",      v:`${winRate}%`,                                                      c:winRate>50?C.accent:winRate<50?C.pink:C.text, sub:`${wins}W / ${losses}L` },
+                        { l:"Win Rate",      v:`${winRate}%`,                                                      c:winRate>=60?C.accent:winRate<=40?C.pink:C.text, sub:`${wins}W / ${losses}L` },
                         { l:"Net P&L",       v:`${totalPnl>0?"+":""}${totalPnl===0?"":totalPnl<0?"-":""}$${Math.abs(totalPnl).toFixed(0)}`, c:totalPnl>0?C.accent:totalPnl<0?C.pink:C.text, sub:"After commission" },
-                        { l:"Profit Factor", v:pf,                                                                  c:parseFloat(pf)>1?C.accent:parseFloat(pf)<1?C.pink:C.text, sub:"Gross ratio" },
-                        { l:"Avg Win",       v:wins>0?`$${avgWin}`:"—",                                            c:wins>0?C.accent:C.textDim, sub:"Per winning trade" },
-                        { l:"Avg Loss",      v:losses>0?`-$${avgLoss}`:"—",                                        c:losses>0?C.pink:C.textDim, sub:"Per losing trade" },
+                        { l:"Profit Factor", v:pf,                                                                  c:parseFloat(pf)>=1.5?C.accent:parseFloat(pf)>=1?C.text:C.pink, sub:"Gross ratio" },
+                        { l:"Avg Win",       v:wins>0?`$${avgWin}`:"—",                                            c:C.text, sub:"Per winning trade" },
+                        { l:"Avg Loss",      v:losses>0?`-$${avgLoss}`:"—",                                        c:C.text, sub:"Per losing trade" },
                         { l:"Avg Duration",  v:avgDur,                                                             c:C.text, sub:"Per closed trade" },
                       ].map(m => (
                         <div key={m.l} style={{ textAlign:"center", padding:"10px 6px", background:"rgba(13,16,24,.6)", borderRadius:6, border:`1px solid ${C.border}` }}>
@@ -2214,179 +2218,6 @@ const Intelligence = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLATFORM COLUMN MAPS — normalise any broker CSV to unified trade schema
 // ═══════════════════════════════════════════════════════════════════════════════
-const PLATFORM_MAPS = {
-  mt4: {
-    label: "MetaTrader 4 / 5",
-    detect: h => h.some(c => /ticket/i.test(c)) && h.some(c => /open.?time/i.test(c)),
-    map: row => {
-      const profit = parseFloat(row["Profit"] || row["profit"] || 0);
-      const openTime = row["Open Time"] || row["open time"] || "";
-      const closeTime = row["Close Time"] || row["close time"] || "";
-      const type = (row["Type"] || row["type"] || "").toLowerCase();
-      const size = parseFloat(row["Size"] || row["size"] || row["Volume"] || 1);
-      const openPrice = parseFloat(row["Open Price"] || row["open price"] || 0);
-      const closePrice = parseFloat(row["Close Price"] || row["close price"] || 0);
-      const sl = parseFloat(row["S/L"] || row["s/l"] || row["SL"] || 0);
-      const tp = parseFloat(row["T/P"] || row["t/p"] || row["TP"] || 0);
-      const riskPips = sl > 0 ? Math.abs(openPrice - sl) : null;
-      const rewardPips = tp > 0 ? Math.abs(tp - openPrice) : null;
-      const rr = riskPips && rewardPips ? parseFloat((rewardPips / riskPips).toFixed(2)) : null;
-      return {
-        id: row["Ticket"] || row["ticket"],
-        instrument: row["Item"] || row["Symbol"] || row["item"] || "UNKNOWN",
-        type: type.includes("buy") ? "Long" : type.includes("sell") ? "Short" : type,
-        size,
-        openPrice,
-        closePrice,
-        openTime,
-        closeTime,
-        profit,
-        win: profit > 0,
-        r: rr,
-        commission: parseFloat(row["Commission"] || 0),
-        swap: parseFloat(row["Swap"] || 0),
-      };
-    }
-  },
-  ctrader: {
-    label: "cTrader",
-    detect: h => h.some(c => /position.?id/i.test(c)) && h.some(c => /direction/i.test(c)),
-    map: row => {
-      const net = parseFloat(row["Net Profit"] || row["net profit"] || row["Gross Profit"] || 0);
-      const direction = (row["Direction"] || row["direction"] || "").toLowerCase();
-      const entryPrice = parseFloat(row["Entry Price"] || row["entry price"] || 0);
-      const exitPrice = parseFloat(row["Exit Price"] || row["exit price"] || 0);
-      const sl = parseFloat(row["Stop Loss"] || row["stop loss"] || 0);
-      const riskPips = sl > 0 ? Math.abs(entryPrice - sl) : null;
-      const rewardPips = riskPips ? Math.abs(exitPrice - entryPrice) : null;
-      const rr = riskPips && rewardPips ? parseFloat((rewardPips / riskPips).toFixed(2)) : null;
-      return {
-        id: row["Position ID"] || row["position id"],
-        instrument: row["Symbol"] || row["symbol"] || "UNKNOWN",
-        type: direction.includes("buy") ? "Long" : "Short",
-        size: parseFloat(row["Quantity"] || row["quantity"] || 1),
-        openPrice: entryPrice,
-        closePrice: exitPrice,
-        openTime: row["Entry Time"] || row["entry time"] || "",
-        closeTime: row["Exit Time"] || row["exit time"] || "",
-        profit: net,
-        win: net > 0,
-        r: rr,
-        commission: parseFloat(row["Commission"] || 0),
-        swap: parseFloat(row["Swap"] || 0),
-      };
-    }
-  },
-  tradovate: {
-    label: "Tradovate",
-    detect: h => h.some(c => /accountid/i.test(c)) || (h.some(c => /action/i.test(c)) && h.some(c => /pnl/i.test(c))),
-    map: row => {
-      const pnl = parseFloat(row["pnl"] || row["PnL"] || row["Net PnL"] || 0);
-      const action = (row["action"] || row["Action"] || "").toLowerCase();
-      return {
-        id: row["id"] || row["orderId"],
-        instrument: row["contractId"] || row["symbol"] || "UNKNOWN",
-        type: action.includes("buy") ? "Long" : action.includes("sell") ? "Short" : action,
-        size: parseFloat(row["qty"] || row["quantity"] || 1),
-        openPrice: parseFloat(row["price"] || 0),
-        closePrice: parseFloat(row["exitPrice"] || row["price"] || 0),
-        openTime: row["timestamp"] || row["date"] || "",
-        closeTime: row["exitTimestamp"] || row["timestamp"] || "",
-        profit: pnl,
-        win: pnl > 0,
-        r: null,
-        commission: parseFloat(row["commission"] || row["Commission"] || 0),
-        swap: 0,
-      };
-    }
-  },
-  tradingview: {
-    label: "TradingView",
-    detect: h => h.some(c => /cum\.?\s*profit/i.test(c)) || (h.some(c => /date.*time/i.test(c)) && h.some(c => /profit/i.test(c))),
-    map: row => {
-      const profit = parseFloat(row["Profit"] || row["profit"] || 0);
-      const type = (row["Type"] || row["type"] || "").toLowerCase();
-      return {
-        id: row["Trade #"] || row["#"] || Math.random().toString(36).slice(2),
-        instrument: row["Symbol"] || row["symbol"] || "UNKNOWN",
-        type: type.includes("long") ? "Long" : type.includes("short") ? "Short" : type,
-        size: parseFloat(row["Qty"] || row["qty"] || row["Contracts"] || 1),
-        openPrice: parseFloat(row["Price"] || row["Entry Price"] || 0),
-        closePrice: parseFloat(row["Exit Price"] || row["Price"] || 0),
-        openTime: row["Date/Time"] || row["Entry Time"] || "",
-        closeTime: row["Exit Date/Time"] || row["Exit Time"] || row["Date/Time"] || "",
-        profit,
-        win: profit > 0,
-        r: null,
-        commission: parseFloat(row["Commission"] || 0),
-        swap: 0,
-      };
-    }
-  },
-  custom: {
-    label: "Custom / Other Broker",
-    detect: () => false,
-    map: row => row, // passthrough — manual mapping UI handles this
-  }
-};
-
-// ── CSV Parser ────────────────────────────────────────────────────────────────
-function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return { headers: [], rows: [] };
-  // Handle quoted fields
-  const splitLine = line => {
-    const result = []; let cur = ""; let inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      if (line[i] === '"') { inQ = !inQ; }
-      else if (line[i] === ',' && !inQ) { result.push(cur.trim()); cur = ""; }
-      else { cur += line[i]; }
-    }
-    result.push(cur.trim());
-    return result;
-  };
-  const headers = splitLine(lines[0]);
-  const rows = lines.slice(1).filter(l => l.trim()).map(l => {
-    const vals = splitLine(l);
-    return headers.reduce((obj, h, i) => ({ ...obj, [h]: vals[i] || "" }), {});
-  });
-  return { headers, rows };
-}
-
-// ── Auto-detect platform from headers ────────────────────────────────────────
-function detectPlatform(headers) {
-  for (const [key, map] of Object.entries(PLATFORM_MAPS)) {
-    if (key !== "custom" && map.detect(headers)) return key;
-  }
-  return null;
-}
-
-// ── Normalise parsed rows into unified trade objects ──────────────────────────
-function normaliseTrades(rows, platform) {
-  const mapFn = PLATFORM_MAPS[platform]?.map;
-  if (!mapFn) return [];
-  return rows.map((row, i) => {
-    try {
-      const t = mapFn(row);
-      return {
-        id: t.id || i + 1,
-        instrument: (t.instrument || "UNKNOWN").toUpperCase(),
-        type: t.type || "Unknown",
-        size: isNaN(t.size) ? 1 : t.size,
-        openPrice: t.openPrice || 0,
-        closePrice: t.closePrice || 0,
-        openTime: t.openTime || "",
-        closeTime: t.closeTime || "",
-        profit: isNaN(t.profit) ? 0 : t.profit,
-        win: t.win,
-        r: t.r,
-        commission: isNaN(t.commission) ? 0 : t.commission,
-        swap: isNaN(t.swap) ? 0 : t.swap,
-        session: getSession(t.openTime),
-      };
-    } catch { return null; }
-  }).filter(Boolean);
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ASSESSMENT ENGINE — all metrics computed from actual trade data
@@ -3042,6 +2873,8 @@ const Journal = ({ setPage, currentTier, user }) => {
   const [deleting,      setDeleting]      = useState(false);
   const [csvStep,       setCsvStep]       = useState("idle");
   const [csvTrades,     setCsvTrades]     = useState(null);
+  const [csvBroker,     setCsvBroker]     = useState(null);
+  const [csvAccount,    setCsvAccount]    = useState("");
   const [dragOver,      setDragOver]      = useState(false);
   const [fileError,     setFileError]     = useState(null);
   const [fileName,      setFileName]      = useState(null);
@@ -3210,16 +3043,15 @@ const Journal = ({ setPage, currentTier, user }) => {
   // ── CSV import ────────────────────────────────────────────────────────────
   const handleFile = file => {
     if (!file || !file.name.endsWith(".csv")) { setFileError("Please upload a CSV file."); return; }
-    setFileName(file.name); setFileError(null); setCsvStep("parsing");
+    setFileName(file.name); setFileError(null); setCsvBroker(null); setCsvStep("parsing");
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = async e => {
       try {
-        const { headers, rows } = parseCSV(e.target.result);
-        const platform = detectPlatform(headers);
-        if (!platform) { setCsvStep("idle"); setFileError("Could not detect broker format. Supported: MT4/MT5, cTrader, Tradovate."); return; }
-        const parsed = normaliseTrades(rows, platform);
-        if (!parsed.length) { setCsvStep("idle"); setFileError("No valid trades found in this file."); return; }
-        setCsvTrades(parsed); setCsvStep("preview");
+        const data = await api.post("/journal/csv/parse", { csv: e.target.result }, token);
+        if (!data.success) { setCsvStep("idle"); setFileError(data.error?.message || "Could not parse file."); return; }
+        const { broker, trades, skipped, total } = data.data;
+        if (!trades?.length) { setCsvStep("idle"); setFileError(`No valid trades found (${skipped} rows skipped of ${total} total).`); return; }
+        setCsvBroker(broker); setCsvTrades(trades); setCsvStep("preview");
       } catch { setCsvStep("idle"); setFileError("Failed to read file. Please check it's a valid CSV."); }
     };
     reader.readAsText(file);
@@ -3228,9 +3060,8 @@ const Journal = ({ setPage, currentTier, user }) => {
     if (!csvTrades?.length) return;
     setCsvStep("importing"); setImportMsg("");
     try {
-      const payload = csvTrades.map(t => ({ instrument:t.instrument, direction:(t.type||"").toLowerCase().includes("buy")||(t.type||"").toLowerCase().includes("long")?"long":"short", entry_price:t.openPrice||0, exit_price:t.closePrice||null, lot_size:t.size||1, net_pl:(t.profit||0)+(t.commission||0)+(t.swap||0), commission:Math.abs(t.commission||0), session_tag:(t.session||"").toLowerCase()||null, opened_at:t.openTime||new Date().toISOString(), closed_at:t.closeTime||null }));
-      const data = await api.post("/journal/import", { trades: payload }, token);
-      if (data.success) { setTrades(prev=>[...(data.data?.trades||[]).map(apiTradeToLocal),...prev]); setCsvStep("done"); setImportMsg(`Successfully imported ${data.data.imported} trade${data.data.imported!==1?"s":""}.`); }
+      const data = await api.post("/journal/csv/import", { trades: csvTrades, account_label: csvAccount || null }, token);
+      if (data.success) { setTrades(prev=>[...(data.data?.trades||[]).map(apiTradeToLocal),...prev]); setCsvStep("done"); setImportMsg(`Successfully imported ${data.data.imported} trade${data.data.imported!==1?"s":""}${data.data.dupes?" · "+data.data.dupes+" duplicates skipped":""}.`); }
       else { setCsvStep("preview"); setImportMsg(data.error?.message||"Import failed."); }
     } catch { setCsvStep("preview"); setImportMsg("Unable to connect. Please try again."); }
   };
@@ -3282,13 +3113,13 @@ const Journal = ({ setPage, currentTier, user }) => {
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
             {[
-              {l:"Win Rate",     v:`${winRate}%`,          sub:`${wins}W · ${losses}L · ${breakeven}BE`,   c:parseFloat(winRate)>=50?C.accent:C.pink},
-              {l:"Net P&L",      v:`${totalPnl>=0?"+":""}$${Math.abs(totalPnl).toFixed(2)}`, sub:"All closed trades", c:totalPnl>=0?C.accent:C.pink},
-              {l:"Profit Factor",v:pf,                     sub:"Gross win/loss ratio",                     c:parseFloat(pf)>=1.5?C.accent:parseFloat(pf)>=1?C.textMuted:C.pink},
-              {l:"Avg Win",      v:`$${avgWin}`,           sub:"Per winning trade",                        c:C.accent},
-              {l:"Avg Loss",     v:`-$${avgLoss}`,         sub:"Per losing trade",                         c:C.pink},
-              {l:"Max Drawdown", v:`-$${maxDD}`,           sub:"Largest equity dip",                       c:C.pink},
-              {l:"Avg R:R",      v:avgRR,                  sub:"R-multiple (tagged trades)",               c:C.textMuted},
+              {l:"Win Rate",     v:`${winRate}%`,          sub:`${wins}W · ${losses}L · ${breakeven}BE`,   c:parseFloat(winRate)>=60?C.accent:parseFloat(winRate)<=40?C.pink:C.text},
+              {l:"Net P&L",      v:`${totalPnl>0?"+":""}$${Math.abs(totalPnl).toFixed(2)}`, sub:"All closed trades", c:totalPnl>0?C.accent:totalPnl<0?C.pink:C.text},
+              {l:"Profit Factor",v:pf,                     sub:"Gross win/loss ratio",                     c:parseFloat(pf)>=1.5?C.accent:parseFloat(pf)>=1?C.text:C.pink},
+              {l:"Avg Win",      v:`$${avgWin}`,           sub:"Per winning trade",                        c:C.text},
+              {l:"Avg Loss",     v:`-$${avgLoss}`,         sub:"Per losing trade",                         c:C.text},
+              {l:"Max Drawdown", v:`-$${maxDD}`,           sub:"Largest equity dip",                       c:C.text},
+              {l:"Avg R:R",      v:avgRR,                  sub:"R-multiple (tagged trades)",               c:C.text},
               {l:"Total Trades", v:closedTrades.length,    sub:`${openTrades.length} open`,                c:C.text},
             ].map(m=>(
               <div key={m.l} className="mc" style={{padding:"12px 14px"}}>
@@ -3301,8 +3132,8 @@ const Journal = ({ setPage, currentTier, user }) => {
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
             {[
               {l:"Current Streak",    v:curStreak>0?`+${curStreak}W`:curStreak<0?`${Math.abs(curStreak)}L`:"—", c:curStreak>0?C.accent:curStreak<0?C.pink:C.textDim},
-              {l:"Best Win Streak",   v:`${maxWinStreak}W`,  c:C.accent},
-              {l:"Worst Loss Streak", v:`${maxLossStreak}L`, c:C.pink},
+              {l:"Best Win Streak",   v:`${maxWinStreak}W`,  c:C.text},
+              {l:"Worst Loss Streak", v:`${maxLossStreak}L`, c:C.text},
             ].map(m=>(
               <div key={m.l} className="mc" style={{padding:"12px 14px",textAlign:"center"}}>
                 <div style={{fontSize:9,color:C.textDim,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5}}>{m.l}</div>
@@ -3314,7 +3145,7 @@ const Journal = ({ setPage, currentTier, user }) => {
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
               <IC n="activity" s={13} c={C.accent}/>
               <div className="sl" style={{margin:0}}>Equity Curve</div>
-              <span style={{fontSize:10,color:totalPnl>=0?C.accent:C.pink,marginLeft:"auto"}}>{totalPnl>=0?"+":""}{totalPnl.toFixed(2)}</span>
+              <span style={{fontSize:10,color:totalPnl>0?C.accent:totalPnl<0?C.pink:C.text,marginLeft:"auto"}}>{totalPnl>0?"+":""}{totalPnl.toFixed(2)}</span>
             </div>
             {equityCurve.length>1?(()=>{
               const W=500,H=100,mn=Math.min(...equityCurve),mx=Math.max(...equityCurve),pad=mx-mn<1?10:0;
@@ -3380,9 +3211,9 @@ const Journal = ({ setPage, currentTier, user }) => {
                 const barH=Math.max(4,Math.abs(d.pnl/maxAbs)*80);
                 return(
                   <div key={d.label} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                    <div style={{fontSize:10,color:d.pnl>=0?C.accent:C.pink,fontFamily:"JetBrains Mono,monospace",minHeight:16}}>{d.count>0?(d.pnl>=0?"+":"")+(d.pnl.toFixed(0)):""}</div>
+                    <div style={{fontSize:10,color:d.pnl>0?C.accent:d.pnl<0?C.pink:C.text,fontFamily:"JetBrains Mono,monospace",minHeight:16}}>{d.count>0?(d.pnl>0?"+":"")+(d.pnl.toFixed(0)):""}</div>
                     <div style={{height:80,display:"flex",alignItems:"flex-end"}}>
-                      <div style={{width:28,height:barH,background:d.count===0?"rgba(255,255,255,.06)":d.pnl>=0?"rgba(41,168,255,.5)":"rgba(233,30,167,.5)",borderRadius:"3px 3px 0 0"}}/>
+                      <div style={{width:28,height:barH,background:d.count===0?"rgba(255,255,255,.06)":d.pnl>0?"rgba(41,168,255,.5)":d.pnl<0?"rgba(233,30,167,.5)":"rgba(255,255,255,.15)",borderRadius:"3px 3px 0 0"}}/>
                     </div>
                     <div style={{fontSize:10,color:C.textMuted,fontWeight:500}}>{d.label}</div>
                     <div style={{fontSize:9,color:C.textDim}}>{d.count>0?`${d.wr}% WR`:""}</div>
@@ -3401,7 +3232,7 @@ const Journal = ({ setPage, currentTier, user }) => {
               {byHour.map(h=>{
                 const maxC=Math.max(...byHour.map(x=>x.count),1);
                 const op=h.count>0?0.15+0.7*(h.count/maxC):0.04;
-                const col=h.pnl>=0?"rgba(41,168,255,":"rgba(233,30,167,";
+                const col=h.pnl>0?"rgba(41,168,255,":h.pnl<0?"rgba(233,30,167,":"rgba(255,255,255,";
                 return(
                   <div key={h.hour} title={`${String(h.hour).padStart(2,"0")}:00 — ${h.count} trades`}
                     style={{height:32,borderRadius:3,background:`${col}${op})`,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -3434,11 +3265,11 @@ const Journal = ({ setPage, currentTier, user }) => {
                     <tr key={r.inst} style={{borderBottom:`1px solid rgba(255,255,255,.04)`}}>
                       <td style={{padding:"8px 10px",fontWeight:600,color:C.text}}>{r.inst}</td>
                       <td style={{padding:"8px 10px",color:C.textMuted}}>{r.count}</td>
-                      <td style={{padding:"8px 10px",color:r.wr>=50?C.accent:C.pink}}>{r.wr}%</td>
-                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",fontWeight:600,color:r.pnl>=0?C.accent:C.pink}}>{r.pnl>=0?"+":""}{r.pnl.toFixed(2)}</td>
-                      <td style={{padding:"8px 10px",color:parseFloat(r.pf)>=1?C.accent:C.pink}}>{r.pf}</td>
-                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",color:C.accent}}>+{r.avgW}</td>
-                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",color:C.pink}}>-{r.avgL}</td>
+                      <td style={{padding:"8px 10px",color:r.wr>=60?C.accent:r.wr<=40?C.pink:C.text}}>{r.wr}%</td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",fontWeight:600,color:r.pnl>0?C.accent:r.pnl<0?C.pink:C.text}}>{r.pnl>0?"+":""}{r.pnl.toFixed(2)}</td>
+                      <td style={{padding:"8px 10px",color:parseFloat(r.pf)>=1.5?C.accent:parseFloat(r.pf)>=1?C.text:C.pink}}>{r.pf}</td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",color:C.text}}>+{r.avgW}</td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",color:C.text}}>-{r.avgL}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -3463,8 +3294,8 @@ const Journal = ({ setPage, currentTier, user }) => {
                     <tr key={i} style={{borderBottom:`1px solid rgba(255,255,255,.04)`}}>
                       <td style={{padding:"8px 10px",color:C.textMuted}}>{r.label}</td>
                       <td style={{padding:"8px 10px",color:C.textMuted}}>{r.count}</td>
-                      <td style={{padding:"8px 10px",color:r.wins/r.count>=.5?C.accent:C.pink}}>{Math.round((r.wins/r.count)*100)}%</td>
-                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",fontWeight:600,color:r.pnl>=0?C.accent:C.pink}}>{r.pnl>=0?"+":""}{r.pnl.toFixed(2)}</td>
+                      <td style={{padding:"8px 10px",color:r.wins/r.count>=.6?C.accent:r.wins/r.count<=.4?C.pink:C.text}}>{Math.round((r.wins/r.count)*100)}%</td>
+                      <td style={{padding:"8px 10px",fontFamily:"JetBrains Mono,monospace",fontWeight:600,color:r.pnl>0?C.accent:r.pnl<0?C.pink:C.text}}>{r.pnl>0?"+":""}{r.pnl.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -3571,7 +3402,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                 <button className="btn bg" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>setCalMonth(p=>{const d=new Date(p.y,p.m+1);return{y:d.getFullYear(),m:d.getMonth()};})}>›</button>
                 <button className="btn bg" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>{const d=new Date();setCalMonth({y:d.getFullYear(),m:d.getMonth()});}}>Today</button>
               </div>
-              <span style={{fontSize:12,fontWeight:600,color:monthPnl>=0?C.accent:C.pink,fontFamily:"JetBrains Mono,monospace"}}>Month: {monthPnl>=0?"+":""}{monthPnl.toFixed(2)}</span>
+              <span style={{fontSize:12,fontWeight:600,color:monthPnl>0?C.accent:monthPnl<0?C.pink:C.text,fontFamily:"JetBrains Mono,monospace"}}>Month: {monthPnl>0?"+":""}{monthPnl.toFixed(2)}</span>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:4}}>
               {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>(
@@ -3588,7 +3419,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                     style={{minHeight:56,padding:"6px 8px",borderRadius:6,cursor:day.hasData?"pointer":"default",background:isSelected?"rgba(41,168,255,.12)":day.hasData?"rgba(255,255,255,.03)":"transparent",border:`1px solid ${isSelected?"rgba(41,168,255,.35)":isToday?"rgba(255,255,255,.18)":day.hasData?"rgba(255,255,255,.07)":"transparent"}`,transition:"all .15s"}}>
                     <div style={{fontSize:11,fontWeight:isToday?600:400,color:isToday?C.accent:C.textMuted,marginBottom:4}}>{day.d}</div>
                     {day.hasData&&<>
-                      <div style={{fontSize:11,fontWeight:600,fontFamily:"JetBrains Mono,monospace",color:day.pnl>=0?C.accent:C.pink,lineHeight:1}}>{day.pnl>=0?"+":""}{day.pnl.toFixed(0)}</div>
+                      <div style={{fontSize:11,fontWeight:600,fontFamily:"JetBrains Mono,monospace",color:day.pnl>0?C.accent:day.pnl<0?C.pink:C.text,lineHeight:1}}>{day.pnl>0?"+":""}{day.pnl.toFixed(0)}</div>
                       <div style={{fontSize:9,color:C.textDim,marginTop:2}}>{day.trades.length}T</div>
                     </>}
                   </div>
@@ -3601,7 +3432,7 @@ const Journal = ({ setPage, currentTier, user }) => {
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
                 <IC n="cal" s={13} c={C.accent}/>
                 <div className="sl" style={{margin:0}}>{new Date(selectedDay.iso+"T12:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
-                <span style={{marginLeft:"auto",fontSize:12,fontWeight:600,color:selectedDay.pnl>=0?C.accent:C.pink,fontFamily:"JetBrains Mono,monospace"}}>{selectedDay.pnl>=0?"+":""}{selectedDay.pnl.toFixed(2)}</span>
+                <span style={{marginLeft:"auto",fontSize:12,fontWeight:600,color:selectedDay.pnl>0?C.accent:selectedDay.pnl<0?C.pink:C.text,fontFamily:"JetBrains Mono,monospace"}}>{selectedDay.pnl>0?"+":""}{selectedDay.pnl.toFixed(2)}</span>
               </div>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
@@ -3636,19 +3467,19 @@ const Journal = ({ setPage, currentTier, user }) => {
             <div className="mc" style={{padding:"24px 28px",textAlign:"center",marginBottom:16}}>
               <IC n="upload" s={28} c={C.accent}/>
               <h3 style={{fontSize:16,fontWeight:500,color:C.text,margin:"12px 0 6px"}}>Import from CSV</h3>
-              <p style={{fontSize:13,color:C.textMuted,marginBottom:20,lineHeight:1.6}}>Export your trade history from MT4/MT5, cTrader, Tradovate, FTMO, or any broker as a CSV file and upload it here.</p>
+              <p style={{fontSize:13,color:C.textMuted,marginBottom:20,lineHeight:1.6}}>Export your trade history from your broker platform as a CSV file. Broker format is detected automatically.</p>
               <div onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}} onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onClick={()=>fileRef.current?.click()}
                 style={{border:`2px dashed ${dragOver?"rgba(41,168,255,.5)":"rgba(255,255,255,.12)"}`,borderRadius:8,padding:"28px 20px",cursor:"pointer",background:dragOver?"rgba(41,168,255,.05)":"transparent",transition:"all .2s",marginBottom:16}}>
                 <IC n="upload" s={20} c={dragOver?C.accent:C.textDim}/>
                 <div style={{fontSize:13,color:dragOver?C.accent:C.textMuted,marginTop:8}}>{fileName||"Drop CSV file here or click to browse"}</div>
-                <div style={{fontSize:11,color:C.textDim,marginTop:4}}>MT4, MT5, cTrader, Tradovate, FTMO supported</div>
+                <div style={{fontSize:11,color:C.textDim,marginTop:4}}>Broker format detected automatically</div>
                 <input ref={fileRef} type="file" accept=".csv" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
               </div>
               {fileError&&<div style={{fontSize:12,color:C.pink,marginBottom:8}}>{fileError}</div>}
               {importMsg&&<div style={{fontSize:12,color:C.pink,marginBottom:8}}>{importMsg}</div>}
-              {csvStep==="parsing"&&<div style={{fontSize:12,color:C.textMuted}}>Parsing file…</div>}
+              {csvStep==="parsing"&&<div style={{fontSize:12,color:C.textMuted}}>Analyzing file…</div>}
               <div style={{display:"flex",gap:10,justifyContent:"center",marginTop:16,flexWrap:"wrap"}}>
-                {["MetaTrader 4/5","cTrader","Tradovate","FTMO","TopStep","MyForexFunds"].map(p=>(
+                {["MetaTrader 4/5","cTrader","TradeLocker","DXTrade","FTMO","TradingView"].map(p=>(
                   <span key={p} style={{fontSize:10,padding:"3px 8px",borderRadius:3,background:"rgba(255,255,255,.04)",color:C.textDim,border:"1px solid rgba(255,255,255,.07)"}}>{p}</span>
                 ))}
               </div>
@@ -3656,19 +3487,25 @@ const Journal = ({ setPage, currentTier, user }) => {
           )}
           {(csvStep==="preview"||csvStep==="importing")&&csvTrades?.length>0&&(
             <div className="mc" style={{padding:"20px 22px"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:12,flexWrap:"wrap"}}>
                 <div>
-                  <div className="sl" style={{margin:0}}>Preview — {csvTrades.length} trades detected</div>
-                  <div style={{fontSize:11,color:C.textDim,marginTop:2}}>Review before importing.</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+                    <div className="sl" style={{margin:0}}>Preview — {csvTrades.length} trades detected</div>
+                    {csvBroker&&csvBroker!=="unknown"&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:3,background:"rgba(41,168,255,.12)",color:C.accent,border:"1px solid rgba(41,168,255,.25)",textTransform:"uppercase"}}>{csvBroker}</span>}
+                  </div>
+                  <div style={{fontSize:11,color:C.textDim}}>Review before importing.</div>
                 </div>
-                <button className="btn bp" style={{opacity:csvStep==="importing"?.6:1}} onClick={confirmImport} disabled={csvStep==="importing"}>
-                  {csvStep==="importing"?"Importing…":`Import ${csvTrades.length} Trades`}
-                </button>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input value={csvAccount} onChange={e=>setCsvAccount(e.target.value)} placeholder="Account label (optional)" style={{fontSize:11,padding:"6px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:"rgba(255,255,255,.04)",color:C.text,outline:"none",width:180}}/>
+                  <button className="btn bp" style={{opacity:csvStep==="importing"?.6:1,whiteSpace:"nowrap"}} onClick={confirmImport} disabled={csvStep==="importing"}>
+                    {csvStep==="importing"?"Importing…":`Import ${csvTrades.length} Trades`}
+                  </button>
+                </div>
               </div>
               <div style={{overflowX:"auto",maxHeight:300,overflowY:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr style={{background:"rgba(255,255,255,.03)"}}>
-                    {["Instrument","Type","Size","Open","Close","P&L","Session"].map(h=>(
+                    {["Instrument","Direction","Lots","Entry","Exit","Net P&L","Session"].map(h=>(
                       <th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,color:C.textDim,letterSpacing:".05em",textTransform:"uppercase"}}>{h}</th>
                     ))}
                   </tr></thead>
@@ -3676,12 +3513,12 @@ const Journal = ({ setPage, currentTier, user }) => {
                     {csvTrades.slice(0,20).map((t,i)=>(
                       <tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
                         <td style={{padding:"6px 10px",fontSize:11,color:C.text}}>{t.instrument}</td>
-                        <td style={{padding:"6px 10px",fontSize:11,color:(t.type||"").toLowerCase().includes("buy")?"#29a8ff":C.pink}}>{t.type}</td>
-                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace"}}>{t.size}</td>
-                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:C.textMuted}}>{t.openPrice?.toFixed(5)}</td>
-                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:C.textMuted}}>{t.closePrice?.toFixed(5)}</td>
-                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:(t.profit||0)>0?C.accent:(t.profit||0)<0?C.pink:C.text}}>{((t.profit||0)+(t.commission||0)).toFixed(2)}</td>
-                        <td style={{padding:"6px 10px",fontSize:11,color:C.textDim}}>{t.session||"—"}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,color:t.direction==="long"?C.accent:C.pink,textTransform:"capitalize"}}>{t.direction}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace"}}>{t.lot_size}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:C.textMuted}}>{t.entry_price?.toFixed(5)}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:C.textMuted}}>{t.exit_price?.toFixed(5)||"—"}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,fontFamily:"JetBrains Mono,monospace",color:(t.net_pl||0)>0?C.accent:(t.net_pl||0)<0?C.pink:C.text}}>{(t.net_pl||0)>0?"+":" "}{(t.net_pl||0).toFixed(2)}</td>
+                        <td style={{padding:"6px 10px",fontSize:11,color:C.textDim,textTransform:"capitalize"}}>{t.session_tag||"—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -3697,7 +3534,7 @@ const Journal = ({ setPage, currentTier, user }) => {
               <p style={{fontSize:13,color:C.textMuted,marginBottom:20}}>{importMsg}</p>
               <div style={{display:"flex",gap:10,justifyContent:"center"}}>
                 <button className="btn bp" onClick={()=>setView("overview")}>View Journal</button>
-                <button className="btn bg" onClick={()=>{setCsvStep("idle");setCsvTrades(null);setFileName(null);setImportMsg("");}}>Import Another</button>
+                <button className="btn bg" onClick={()=>{setCsvStep("idle");setCsvTrades(null);setCsvBroker(null);setCsvAccount("");setFileName(null);setImportMsg("");}}>Import Another</button>
               </div>
             </div>
           )}
@@ -3889,17 +3726,17 @@ const Journal = ({ setPage, currentTier, user }) => {
 };
 
 
-const CognitiveIntelligence = ({ setPage }) => {
+const CognitiveIntelligence = ({ setPage, engineTrades = [] }) => {
   const EQUITY_CURVE = [100,97,99,103,101,105,102,108,106,111,109,114,112,117,115,120,118,123,121,126,130];
   const [commitment, setCommitment] = useState(DEFAULT_COMMITMENT);
   const [committed, setCommitted]   = useState(false);
 
-  const biasFlags  = computeBiasFlags(TRADE_DATA);
-  const fatigue    = computeFatigueIndex(TRADE_DATA);
-  const volAlign   = computeVolatilityAlignment(ATR_DATA, computeRiskConsistency(TRADE_DATA).avg);
-  const riskCons   = computeRiskConsistency(TRADE_DATA);
-  const revenge    = computeRevengeScore(TRADE_DATA);
-  const overtrading= computeOvertradingScore(TRADE_DATA);
+  const biasFlags  = computeBiasFlags(engineTrades);
+  const fatigue    = computeFatigueIndex(engineTrades);
+  const volAlign   = computeVolatilityAlignment(ATR_DATA, computeRiskConsistency(engineTrades).avg);
+  const riskCons   = computeRiskConsistency(engineTrades);
+  const revenge    = computeRevengeScore(engineTrades);
+  const overtrading= computeOvertradingScore(engineTrades);
   const equity     = computeEquityStability(EQUITY_CURVE);
   const pdi        = computePDI(riskCons.score, revenge.score, overtrading.score, equity.score);
   const tone       = getCoachingTone(pdi);
@@ -4318,7 +4155,7 @@ const ConnectionCard = ({ conn, onSelect, onDisconnect, selected }) => {
     ? `${Math.round((conn.stats.wins / conn.stats.total_trades) * 100)}%`
     : "—";
   const pnl = conn.stats
-    ? (conn.stats.net_pnl >= 0 ? `+$${conn.stats.net_pnl.toFixed(0)}` : `-$${Math.abs(conn.stats.net_pnl).toFixed(0)}`)
+    ? (conn.stats.net_pnl > 0 ? `+$${conn.stats.net_pnl.toFixed(0)}` : `-$${Math.abs(conn.stats.net_pnl).toFixed(0)}`)
     : "—";
 
   return (
@@ -4347,8 +4184,8 @@ const ConnectionCard = ({ conn, onSelect, onDisconnect, selected }) => {
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
         {[
-          { l:"Net P/L",   v:pnl,                          c:conn.stats?.net_pnl >= 0 ? C.accent : C.pink },
-          { l:"Win Rate",  v:wr,                            c:C.accent },
+          { l:"Net P/L",   v:pnl,                          c:conn.stats ? (conn.stats.net_pnl > 0 ? C.accent : conn.stats.net_pnl < 0 ? C.pink : C.text) : C.text },
+          { l:"Win Rate",  v:wr,                            c:C.text },
           { l:"Trades",    v:conn.stats?.total_trades || "—", c:C.text },
         ].map(m => (
           <div key={m.l} style={{ textAlign:"center", padding:"6px 4px", background:"rgba(0,0,0,.2)", borderRadius:4 }}>
@@ -4742,12 +4579,12 @@ const PreCommitment = ({ onCommit }) => {
 };
 
 // ── PART 8: Full Cognitive Intelligence Page ──────────────────────────────────
-const BehavioralEngine = ({ setPage }) => {
+const BehavioralEngine = ({ setPage, engineTrades = [] }) => {
   const EQUITY_CURVE = [100,97,99,103,101,105,102,108,106,111,109,114,112,117,115,120,118,123,121,126,130];
 
-  const revenge    = computeRevengeScore(TRADE_DATA);
-  const riskCons   = computeRiskConsistency(TRADE_DATA);
-  const overtrading= computeOvertradingScore(TRADE_DATA);
+  const revenge    = computeRevengeScore(engineTrades);
+  const riskCons   = computeRiskConsistency(engineTrades);
+  const overtrading= computeOvertradingScore(engineTrades);
   const equity     = computeEquityStability(EQUITY_CURVE);
   const pdi        = computePDI(riskCons.score, revenge.score, overtrading.score, equity.score);
   const pdiMeta    = pdiLabel(pdi);
@@ -4761,7 +4598,7 @@ const BehavioralEngine = ({ setPage }) => {
       <div style={{ marginBottom:24 }}>
         <div style={{ display:"flex",alignItems:"baseline",gap:14,marginBottom:6 }}>
           <h1 className="df" style={{fontFamily:"'Counter-Strike',sans-serif", fontSize:28,fontWeight:300 }}>Behavioral Intelligence</h1>
-          <span style={{ fontSize:10,color:C.textDim,letterSpacing:".1em",textTransform:"uppercase" }}>Live Engine · 18 Trades Analysed</span>
+          <span style={{ fontSize:10,color:C.textDim,letterSpacing:".1em",textTransform:"uppercase" }}>Live Engine · {engineTrades.length} Trades Analysed</span>
         </div>
         <p style={{ color:C.textMuted,fontSize:13,maxWidth:580 }}>
           Data-driven behavioral diagnostics. Revenge detection, risk consistency scoring, overtrading analysis, and equity curve stability — all feeding the Performance Coach.
@@ -10918,14 +10755,15 @@ const Admin = ({ setPage }) => {
 // APP SHELL — subscription state + access enforcement
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [authed,    setAuthed]    = useState(false);
-  const [page,      setPage]      = useState("dashboard");
-  const [mobNavOpen, setMobNavOpen] = useState(false);
-  const [tier,      setTier]      = useState("free");
-  const [aiUsed,    setAiUsed]    = useState(0);
-  const [subStatus, setSubStatus] = useState("inactive");
-  const [token,     setToken]     = useState(null);
-  const [user,      setUser]      = useState(null);
+  const [authed,       setAuthed]       = useState(false);
+  const [page,         setPage]         = useState("dashboard");
+  const [mobNavOpen,   setMobNavOpen]   = useState(false);
+  const [tier,         setTier]         = useState("free");
+  const [aiUsed,       setAiUsed]       = useState(0);
+  const [subStatus,    setSubStatus]    = useState("inactive");
+  const [token,        setToken]        = useState(null);
+  const [user,         setUser]         = useState(null);
+  const [engineTrades, setEngineTrades] = useState([]);
 
   useEffect(() => {
     window.__fortitudeNav = setPage;
@@ -10955,6 +10793,28 @@ export default function App() {
       } catch { localStorage.removeItem("fis_token"); localStorage.removeItem("fis_user"); }
     }
   }, []);
+
+  // Fetch trades for behavioral/cognitive engines whenever token changes
+  useEffect(() => {
+    if (!token) { setEngineTrades([]); return; }
+    api.get("/journal/trades?limit=500", token).then(d => {
+      if (!d?.success) return;
+      const raw = d.data?.trades || [];
+      setEngineTrades(raw.map(t => {
+        const profit = parseFloat(t.netPl ?? t.net_pl ?? 0);
+        return {
+          size:       parseFloat(t.lotSize || t.lot_size || 0),
+          time:       t.openedAt || t.opened_at || new Date().toISOString(),
+          win:        profit > 0,
+          profit,
+          result:     parseFloat(t.rMultiple ?? t.r_multiple ?? profit),
+          type:       (t.direction || "") === "long" ? "Long" : "Short",
+          instrument: t.instrument || "",
+          session:    (t.sessionTag || t.session_tag || "").toLowerCase(),
+        };
+      }));
+    }).catch(() => {});
+  }, [token]);
 
   const handleLogin = ({ token: t, user }) => {
     setToken(t); setUser(user); setAuthed(true);
@@ -11099,7 +10959,7 @@ export default function App() {
       }
     }
     const P = PAGES[page] || Dashboard;
-    return <P setPage={setPage} currentTier={tier} aiUsed={aiUsed} user={user}/>;
+    return <P setPage={setPage} currentTier={tier} aiUsed={aiUsed} user={user} engineTrades={engineTrades}/>;
   };
 
   if (!authed) return <><style>{STYLES}</style><Login onLogin={handleLogin}/></>;
