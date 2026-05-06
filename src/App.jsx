@@ -9155,6 +9155,7 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
   if (trialStep) {
     const t = TIERS[trialStep.tierId];
     const price = trialStep.billing === "annual" ? t.annual : t.monthly;
+    const cryptoTotal = trialStep.billing === "annual" ? t.annual * 12 : t.monthly; // full annual charge for crypto
     const tierApiMap = { "45":"core_45", "65":"pro_65", "95":"elite_95" };
     return (
       <div className="fi" style={{ maxWidth: 660, margin: "0 auto" }}>
@@ -9191,18 +9192,18 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
 
           {/* Crypto option */}
           <div onClick={() => { setPayMethod("crypto"); setCryptoErr(""); }}
-            style={{ padding: "16px 18px", borderRadius: 10, border: `2px solid ${payMethod==="crypto" ? "#f7931a" : C.border}`, background: payMethod==="crypto" ? "rgba(247,147,26,.06)" : C.surface, cursor: "pointer", transition: "all .15s" }}>
+            style={{ padding: "16px 18px", borderRadius: 10, border: `2px solid ${payMethod==="crypto" ? C.accent : C.border}`, background: payMethod==="crypto" ? `${C.accent}08` : C.surface, cursor: "pointer", transition: "all .15s" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: payMethod==="crypto" ? "rgba(247,147,26,.15)" : "rgba(255,255,255,.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>₿</div>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: payMethod==="crypto" ? `${C.accent}15` : "rgba(255,255,255,.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>₿</div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: payMethod==="crypto" ? "#f7931a" : C.text }}>Pay with Crypto</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: payMethod==="crypto" ? C.accent : C.text }}>Pay with Crypto</div>
                 <div style={{ fontSize: 10, color: C.textDim }}>BTC, ETH, USDT &amp; more</div>
               </div>
-              <div style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: "50%", border: `2px solid ${payMethod==="crypto" ? "#f7931a" : C.border}`, background: payMethod==="crypto" ? "#f7931a" : "transparent", transition: "all .15s" }}/>
+              <div style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: "50%", border: `2px solid ${payMethod==="crypto" ? C.accent : C.border}`, background: payMethod==="crypto" ? C.accent : "transparent", transition: "all .15s" }}/>
             </div>
-            <div style={{ padding: "7px 10px", borderRadius: 5, background: "rgba(247,147,26,.08)", border: "1px solid rgba(247,147,26,.2)" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#f7931a", letterSpacing: ".06em" }}>IMMEDIATE ACCESS</div>
-              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>Pay ${price} now · no trial required</div>
+            <div style={{ padding: "7px 10px", borderRadius: 5, background: `${C.accent}10`, border: `1px solid ${C.accentDim}` }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.accent, letterSpacing: ".06em" }}>IMMEDIATE ACCESS</div>
+              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>Pay ${cryptoTotal} now · no trial required</div>
             </div>
           </div>
         </div>
@@ -9279,8 +9280,8 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
               <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.8, marginBottom: 20, maxWidth: 380, margin: "0 auto 20px" }}>
                 Complete your payment in the Syrax tab. Your Fortitude access activates automatically once the transaction confirms on-chain — typically 1–5 minutes.
               </div>
-              <div style={{ padding: "12px 16px", borderRadius: 7, background: "rgba(247,147,26,.06)", border: "1px solid rgba(247,147,26,.2)", marginBottom: 20, textAlign: "left" }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "#f7931a", marginBottom: 4 }}>What happens next</div>
+              <div style={{ padding: "12px 16px", borderRadius: 7, background: `${C.accent}0d`, border: `1px solid ${C.accent}33`, marginBottom: 20, textAlign: "left" }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: C.accent, marginBottom: 4 }}>What happens next</div>
                 <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.7 }}>Once your payment confirms, log out and back in — your new plan will be active. If it hasn't updated after 10 minutes, contact support.</div>
               </div>
               <button className="btn bg" style={{ fontSize: 12, padding: "9px 24px" }} onClick={() => window.location.reload()}>
@@ -9292,7 +9293,7 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 20 }}>
                 <div>
                   <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>Total due today</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: C.text, fontFamily: "JetBrains Mono,monospace", lineHeight: 1 }}>${price}<span style={{ fontSize: 12, color: C.textDim, fontWeight: 400 }}> USD</span></div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: C.text, fontFamily: "JetBrains Mono,monospace", lineHeight: 1 }}>${cryptoTotal}<span style={{ fontSize: 12, color: C.textDim, fontWeight: 400 }}> USD</span></div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>Plan</div>
@@ -9303,7 +9304,7 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
               <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 22 }}>
                 {["Pay with BTC, ETH, USDT and 20+ cryptocurrencies","Access activates automatically on-chain confirmation","Secure hosted checkout — we never see your wallet","No trial — full access starts immediately after payment"].map(f => (
                   <div key={f} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
-                    <IC n="check" s={11} c="#f7931a" style={{ flexShrink: 0, marginTop: 2 }}/>
+                    <IC n="check" s={11} c={C.accent} style={{ flexShrink: 0, marginTop: 2 }}/>
                     <span style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.6 }}>{f}</span>
                   </div>
                 ))}
@@ -9314,15 +9315,15 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
                 </div>
               )}
               <button
-                style={{ width: "100%", padding: 15, fontSize: 14, fontWeight: 700, background: "linear-gradient(135deg,#f7931a,#f7c31a)", color: "#000", border: "none", borderRadius: 8, cursor: cryptoLoading ? "not-allowed" : "pointer", opacity: cryptoLoading ? 0.6 : 1, letterSpacing: ".02em" }}
+                className="btn bp" style={{ width: "100%", padding: 15, fontSize: 14, fontWeight: 700, borderRadius: 8, cursor: cryptoLoading ? "not-allowed" : "pointer", opacity: cryptoLoading ? 0.6 : 1, letterSpacing: ".02em" }}
                 onClick={handleCryptoCheckout} disabled={cryptoLoading}>
                 {cryptoLoading
                   ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: "#000", display: "inline-block" }}/>
-                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: "#000", display: "inline-block", animationDelay: ".15s" }}/>
-                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: "#000", display: "inline-block", animationDelay: ".3s" }}/>
+                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", display: "inline-block" }}/>
+                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", display: "inline-block", animationDelay: ".15s" }}/>
+                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", display: "inline-block", animationDelay: ".3s" }}/>
                     </span>
-                  : `Pay $${price} with Crypto →`}
+                  : `Pay $${cryptoTotal} with Crypto →`}
               </button>
               <div style={{ fontSize: 10, color: C.textDim, textAlign: "center", marginTop: 12 }}>Powered by Syrax Pay · Secure on-chain settlement</div>
             </>
