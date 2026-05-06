@@ -9126,16 +9126,15 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
         <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.accentGlow, border: `1px solid ${C.accentDim}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
           <IC n="check" s={28} c={C.accent} />
         </div>
-        <h2 className="df" style={{ fontFamily: "'Counter-Strike',sans-serif", fontSize: 22, fontWeight: 300, color: C.text, marginBottom: 10 }}>Trial Activated</h2>
+        <h2 className="df" style={{ fontFamily: "'Counter-Strike',sans-serif", fontSize: 22, fontWeight: 300, color: C.text, marginBottom: 10 }}>Subscription Activated</h2>
         <p style={{ color: C.textMuted, fontSize: 14, lineHeight: 1.8, maxWidth: 380, margin: "0 auto 24px" }}>
-          Your 7-day free trial for <strong style={{ color: C.text }}>{TIERS[trialStep?.tierId]?.label}</strong> is now active. No charge until your trial ends on <strong style={{ color: C.text }}>{new Date(Date.now()+7*864e5).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}</strong>.
+          Your <strong style={{ color: C.text }}>{TIERS[trialStep?.tierId]?.label}</strong> subscription is now active. Full platform access has been unlocked.
         </p>
         <div style={{ padding: "14px 20px", background: C.surfaceAlt, borderRadius: 8, border: `1px solid ${C.border}`, marginBottom: 24, textAlign: "left" }}>
           {[
-            { l: "Plan", v: `${TIERS[trialStep?.tierId]?.label} (${billingAnnual?"Annual":"Monthly"})` },
-            { l: "Trial ends", v: new Date(Date.now()+7*864e5).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"}) },
-            { l: "First charge", v: billingAnnual ? `$${TIERS[trialStep?.tierId]?.annual}/mo` : `$${TIERS[trialStep?.tierId]?.monthly}/mo` },
-            { l: "Auto-renews", v: "Yes — cancel anytime before trial ends" },
+            { l: "Plan", v: `${TIERS[trialStep?.tierId]?.label} (${trialStep?.billing==="annual"?"Annual":"Monthly"})` },
+            { l: "Amount", v: trialStep?.billing==="annual" ? `$${TIERS[trialStep?.tierId]?.annual}/mo` : `$${TIERS[trialStep?.tierId]?.monthly}/mo` },
+            { l: "Auto-renews", v: "Yes — cancel anytime from settings" },
           ].map(r => (
             <div key={r.l} style={{ display:"flex", justifyContent:"space-between", padding:"6px 0", borderBottom:`1px solid ${C.border}` }}>
               <span style={{ fontSize: 12, color: C.textDim }}>{r.l}</span>
@@ -9167,8 +9166,17 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
         {/* Header */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", color: C.textDim, textTransform: "uppercase", marginBottom: 6 }}>Checkout</div>
-          <h2 className="df" style={{ fontFamily: "'Counter-Strike',sans-serif", fontSize: 22, fontWeight: 300, color: C.text, letterSpacing: ".04em", marginBottom: 4 }}>{t.label} Plan</h2>
-          <div style={{ fontSize: 13, color: C.textMuted }}>${price}/month · {trialStep.billing === "annual" ? "billed annually" : "billed monthly"}</div>
+          <h2 className="df" style={{ fontFamily: "'Counter-Strike',sans-serif", fontSize: 22, fontWeight: 300, color: C.text, letterSpacing: ".04em", marginBottom: 10 }}>{t.label} Plan</h2>
+          {/* Billing toggle */}
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <span style={{ fontSize:12, color:trialStep.billing==="annual"?C.textDim:C.text, fontWeight:trialStep.billing==="annual"?400:600 }}>Monthly</span>
+            <div onClick={() => setTrialStep(p => ({ ...p, billing: p.billing==="annual"?"monthly":"annual" }))}
+              style={{ width:36, height:20, borderRadius:10, cursor:"pointer", transition:"background .2s", background:trialStep.billing==="annual"?C.accent:"rgba(255,255,255,.12)", position:"relative", flexShrink:0 }}>
+              <div style={{ position:"absolute", top:2, left:trialStep.billing==="annual"?18:2, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }}/>
+            </div>
+            <span style={{ fontSize:12, color:trialStep.billing==="annual"?C.text:C.textDim, fontWeight:trialStep.billing==="annual"?600:400 }}>Annual</span>
+            {trialStep.billing==="annual" && <span style={{ fontSize:9, fontWeight:700, color:C.accent, letterSpacing:".06em", padding:"2px 7px", border:`1px solid ${C.accent}40`, borderRadius:3 }}>SAVE 20%</span>}
+          </div>
         </div>
 
         {/* Payment method selector — two equal cards */}
@@ -9185,8 +9193,8 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
               <div style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: "50%", border: `2px solid ${payMethod==="card" ? C.accent : C.border}`, background: payMethod==="card" ? C.accent : "transparent", transition: "all .15s" }}/>
             </div>
             <div style={{ padding: "7px 10px", borderRadius: 5, background: `${C.accent}10`, border: `1px solid ${C.accentDim}` }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.accent, letterSpacing: ".06em" }}>INCLUDES 7-DAY FREE TRIAL</div>
-              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>No charge today — cancel before day 7</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.accent, letterSpacing: ".06em" }}>SECURE CARD PAYMENT</div>
+              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>Cancel anytime · charged today</div>
             </div>
           </div>
 
@@ -9238,16 +9246,20 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
             </div>
           </div>
           <hr className="dv" style={{ margin: "20px 0" }} />
-          <div style={{ padding: "12px 14px", background: `${C.accent}06`, border: `1px solid ${C.accentDim}`, borderRadius: 7, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: C.accent, marginBottom: 4 }}>7-Day Free Trial</div>
-            <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.7 }}>You won't be charged today. Your first payment of <strong style={{ color: C.text }}>${price}</strong> is due on {new Date(Date.now()+7*864e5).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})} unless you cancel before then.</div>
+          <div style={{ padding: "12px 14px", background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 7, marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.textDim, marginBottom: 6, letterSpacing: ".06em", textTransform: "uppercase" }}>Billing Summary</div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{t.label} · {trialStep.billing === "annual" ? "Annual" : "Monthly"}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: "JetBrains Mono,monospace" }}>${price}<span style={{ fontSize:10, color:C.textDim, fontWeight:400 }}>/mo</span></span>
+            </div>
+            {trialStep.billing === "annual" && <div style={{ fontSize: 10, color: C.accent, marginTop: 4 }}>Billed as ${price * 12}/year · save ${(t.monthly - t.annual) * 12}/yr vs monthly</div>}
           </div>
           <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", marginBottom: 18 }}>
             <div onClick={() => setAgreedTrial(!agreedTrial)} style={{ width: 16, height: 16, borderRadius: 3, border: `1px solid ${agreedTrial ? C.accent : C.border}`, background: agreedTrial ? C.accentGlow : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all .15s" }}>
               {agreedTrial && <IC n="check" s={9} c={C.accent} />}
             </div>
             <span style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.7 }}>
-              I agree that after my free trial I will be charged <strong style={{ color: C.text }}>${price}/month</strong> ({trialStep.billing === "annual" ? "billed annually" : "billed monthly"}) until I cancel.
+              I authorise a charge of <strong style={{ color: C.text }}>${price}/month</strong> ({trialStep.billing === "annual" ? "billed annually" : "billed monthly"}) and understand I can cancel anytime.
             </span>
           </label>
           <button className="btn bp" style={{ width: "100%", padding: 14, fontSize: 13, opacity: (trialCardValid && agreedTrial && !trialProcessing) ? 1 : 0.4 }} onClick={handleStartTrial} disabled={!trialCardValid || !agreedTrial || trialProcessing}>
@@ -9257,7 +9269,7 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
                   <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: C.bg, display: "inline-block", animationDelay: ".15s" }}/>
                   <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: C.bg, display: "inline-block", animationDelay: ".3s" }}/>
                 </span>
-              : "Start Free Trial — $0 Today →"}
+              : `Subscribe Now — $${price}/mo →`}
           </button>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 14 }}>
             {[{icon:"shield",label:"256-bit SSL"},{icon:"lock",label:"Secure"},{icon:"check",label:"Cancel Anytime"}].map(b => (
@@ -9342,14 +9354,7 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
           <h1 className="df df-h1" style={{fontFamily:"'Counter-Strike',sans-serif", fontSize:28, fontWeight:300}}>Membership</h1>
           <span style={{ fontSize:10, color:C.textDim, letterSpacing:".1em", textTransform:"uppercase" }}>Structured access. No hidden terms.</span>
         </div>
-        <p style={{ color:C.textMuted, fontSize:14, maxWidth:520 }}>Select the tier appropriate to your current stage of development. All paid plans include a 7-day free trial.</p>
-      </div>
-
-      {/* Free trial badge */}
-      <div style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 16px", background:"linear-gradient(90deg,rgba(41,168,255,.07),rgba(41,168,255,.02))", border:`1px solid ${C.accentDim}`, borderRadius:8, marginBottom:20 }}>
-        <IC n="zap" s={16} c={C.accent}/>
-        <span style={{ fontSize:13, color:C.text, fontWeight:500 }}>7-Day Free Trial on all paid plans</span>
-        <span style={{ fontSize:12, color:C.textMuted }}>— Full access, card required, cancel anytime before day 7</span>
+        <p style={{ color:C.textMuted, fontSize:14, maxWidth:520 }}>Select the tier appropriate to your current stage of development. Full platform access from day one.</p>
       </div>
 
       {/* Billing toggle */}
@@ -9376,11 +9381,6 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
               onMouseEnter={e=>{ if(!isCurrent) e.currentTarget.style.borderColor=C.accent+"50"; }}
               onMouseLeave={e=>{ if(!isCurrent) e.currentTarget.style.borderColor=C.border; }}>
               {t.id==="65" && <div style={{ position:"absolute", top:-1, left:"50%", transform:"translateX(-50%)", background:C.accent, color:"#fff", fontSize:9, fontWeight:700, letterSpacing:".1em", textTransform:"uppercase", padding:"2px 10px", borderRadius:"0 0 5px 5px" }}>Most Popular</div>}
-              {t.monthly > 0 && !isCurrent && (
-                <div style={{ position:"absolute", top:8, right:8, padding:"2px 7px", background:"rgba(41,168,255,.1)", border:`1px solid ${C.accentDim}`, borderRadius:3 }}>
-                  <span style={{ fontSize:8, color:C.accent, fontWeight:700, letterSpacing:".06em" }}>7-DAY FREE TRIAL</span>
-                </div>
-              )}
               <div style={{ marginBottom:14 }}>
                 <div style={{ fontSize:11, fontWeight:600, color:isCurrent?t.color:C.textMuted, letterSpacing:".08em", textTransform:"uppercase", marginBottom:6 }}>{t.label}</div>
                 <div className="mn" style={{ fontSize:24, color:isCurrent?t.color:C.text, fontWeight:400, lineHeight:1 }}>{price}</div>
@@ -9412,6 +9412,18 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
             </div>
           );
         })}
+      </div>
+
+      {/* Trial CTA for fence-sitters */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 18px", background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, marginBottom:24 }}>
+        <div>
+          <div style={{ fontSize:12, fontWeight:600, color:C.text, marginBottom:2 }}>Not ready to commit?</div>
+          <div style={{ fontSize:11, color:C.textMuted }}>We offer 7-day trials to qualifying members — speak with us first.</div>
+        </div>
+        <button className="btn bg" style={{ fontSize:11, padding:"8px 16px", whiteSpace:"nowrap", flexShrink:0 }}
+          onClick={() => { if(window.Tawk_API?.toggle) window.Tawk_API.toggle(); else window.open("mailto:support@fortitude.trade?subject=Trial Request","_blank"); }}>
+          Chat with us →
+        </button>
       </div>
 
       {/* Course & Education section */}
