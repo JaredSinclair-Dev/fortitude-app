@@ -2700,6 +2700,7 @@ const BrokerAccounts = ({ setPage }) => {
         accessToken: ctTokens.accessToken, refreshToken: ctTokens.refreshToken,
         expiresIn: ctTokens.expiresIn, ctAccountId: ctSelectedId,
         accountLabel: accountLabel || acct?.brokerName || "cTrader Account",
+        isLive: acct?.isLive !== false,
       }, token);
       if (d.success) { setConnections(prev => [...prev, d.data.connection]); setAddStep("done"); }
       else setErr(d.error?.message || "Failed to connect account");
@@ -2803,18 +2804,29 @@ const BrokerAccounts = ({ setPage }) => {
                 <span style={{fontSize:7,fontWeight:700,color:BK_COLOR[conn.broker_type]||C.accent,letterSpacing:".04em"}}>{BK_LABEL[conn.broker_type]||conn.broker_type}</span>
               </div>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:14,fontWeight:600,color:C.text,marginBottom:3}}>{conn.account_label||"Trading Account"}</div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
+                  <span style={{fontSize:14,fontWeight:600,color:C.text}}>{conn.account_label||"Trading Account"}</span>
+                  {conn.is_live===false&&(
+                    <span style={{fontSize:9,fontWeight:700,letterSpacing:".06em",padding:"2px 7px",borderRadius:4,background:"rgba(255,193,7,.1)",border:"1px solid rgba(255,193,7,.3)",color:"#ffc107",textTransform:"uppercase"}}>Demo</span>
+                  )}
+                </div>
                 <div style={{fontSize:11,color:C.textDim,display:"flex",gap:12,flexWrap:"wrap"}}>
                   <span>{BK_LABEL[conn.broker_type]||conn.broker_type}</span>
                   <span>Last synced: {relTime(conn.last_synced_at)}</span>
                 </div>
+                {conn.is_live===false&&conn.broker_type==="ctrader"&&(
+                  <div style={{marginTop:8,padding:"8px 12px",borderRadius:6,background:"rgba(255,193,7,.06)",border:"1px solid rgba(255,193,7,.2)",display:"flex",alignItems:"flex-start",gap:8}}>
+                    <IC n="info" s={12} c="#ffc107" style={{flexShrink:0,marginTop:1}}/>
+                    <span style={{fontSize:11,color:"rgba(255,193,7,.85)",lineHeight:1.6}}>Demo accounts cannot auto-sync trades. To import your demo history, use <strong style={{color:"#ffc107",cursor:"pointer"}} onClick={()=>setPage("journal")}>CSV Import</strong> instead.</span>
+                  </div>
+                )}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <div style={{width:7,height:7,borderRadius:"50%",background:conn.is_active?"#29a8ff":C.pink,boxShadow:conn.is_active?"0 0 6px #29a8ff80":"none"}}/>
                 <span style={{fontSize:11,color:conn.is_active?"#29a8ff":C.pink}}>{conn.is_active?"Active":"Inactive"}</span>
               </div>
               <div className="broker-card-actions" style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {conn.broker_type==="ctrader"&&(
+                {conn.broker_type==="ctrader"&&conn.is_live!==false&&(
                   <button className="btn bg" style={{fontSize:11,padding:"5px 12px",display:"flex",alignItems:"center",gap:5,opacity:syncing[conn.id]?0.6:1}} disabled={syncing[conn.id]} onClick={()=>syncConn(conn.id)}>
                     <IC n="refresh" s={11} c={C.textMuted}/>{syncing[conn.id]?"Syncing...":"Sync Now"}
                   </button>
@@ -2996,21 +3008,38 @@ const BrokerAccounts = ({ setPage }) => {
             )}
 
             {/* Step: done */}
-            {addStep==="done"&&(
+            {addStep==="done"&&(()=>{
+              const _doneAcct = ctAccounts.find(a=>a.ctAccountId===ctSelectedId);
+              const _isDemo   = _doneAcct?.isLive===false;
+              return (
               <div style={{textAlign:"center",padding:"20px 0"}}>
                 <div style={{width:52,height:52,borderRadius:"50%",background:"rgba(41,168,255,.1)",border:"1px solid rgba(41,168,255,.3)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}>
                   <IC n="check" s={24} c="#29a8ff"/>
                 </div>
                 <div style={{fontSize:16,fontWeight:600,color:C.text,marginBottom:8}}>Account Connected</div>
-                <div style={{fontSize:13,color:C.textMuted,marginBottom:24,lineHeight:1.7,maxWidth:360,margin:"0 auto 24px"}}>
-                  Your cTrader account is connected. Trades are syncing now and will update automatically every 15 minutes.
-                </div>
+                {_isDemo?(
+                  <div style={{margin:"0 auto 20px",maxWidth:360}}>
+                    <div style={{padding:"12px 16px",borderRadius:8,background:"rgba(255,193,7,.06)",border:"1px solid rgba(255,193,7,.25)",textAlign:"left",marginBottom:12}}>
+                      <div style={{fontSize:12,fontWeight:600,color:"#ffc107",marginBottom:4}}>Demo account detected</div>
+                      <div style={{fontSize:12,color:"rgba(255,193,7,.8)",lineHeight:1.7}}>Auto-sync is not available for demo accounts — brokers don't expose demo trade history via their API. To import your demo trades, use CSV Import from the Journal.</div>
+                    </div>
+                  </div>
+                ):(
+                  <div style={{fontSize:13,color:C.textMuted,marginBottom:24,lineHeight:1.7,maxWidth:360,margin:"0 auto 24px"}}>
+                    Your cTrader account is connected. Trades are syncing now and will update automatically every 15 minutes.
+                  </div>
+                )}
                 <div style={{display:"flex",gap:8,justifyContent:"center"}}>
-                  <button className="btn bp" style={{fontSize:12,padding:"10px 20px"}} onClick={()=>{setAddOpen(false);setPage("journal");}}>Open Journal →</button>
+                  {_isDemo?(
+                    <button className="btn bp" style={{fontSize:12,padding:"10px 20px"}} onClick={()=>{setAddOpen(false);setPage("journal");}}>Go to CSV Import →</button>
+                  ):(
+                    <button className="btn bp" style={{fontSize:12,padding:"10px 20px"}} onClick={()=>{setAddOpen(false);setPage("journal");}}>Open Journal →</button>
+                  )}
                   <button className="btn bg" style={{fontSize:12,padding:"10px 16px"}} onClick={()=>setAddOpen(false)}>Close</button>
                 </div>
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       )}
@@ -8976,6 +9005,9 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
   const [trialProcessing, setTrialProcessing] = useState(false);
   const [trialDone, setTrialDone] = useState(false);
   const [agreedTrial, setAgreedTrial] = useState(false);
+  const [payMethod, setPayMethod] = useState("card"); // "card" | "crypto"
+  const [cryptoLoading, setCryptoLoading] = useState(false);
+  const [cryptoErr, setCryptoErr] = useState("");
 
   const fmtCard = v => v.replace(/\D/g,"").slice(0,16).replace(/(\d{4})(?=\d)/g,"$1 ");
   const fmtExp  = v => v.replace(/\D/g,"").slice(0,4).replace(/(\d{2})(?=\d)/g,"$1/");
@@ -9018,6 +9050,27 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
       onUpgrade(trialStep.tierId);
       setSubStatus && setSubStatus("active");
     }
+  };
+
+  const handleCryptoCheckout = async () => {
+    const token = localStorage.getItem("fis_token");
+    setCryptoLoading(true); setCryptoErr("");
+    try {
+      const tierMap = { "45":"core_45", "65":"pro_65", "95":"elite_95" };
+      const data = await api.post("/billing/crypto/checkout", {
+        tier: tierMap[trialStep.tierId],
+        billing_cycle: trialStep.billing || "monthly",
+      }, token);
+      if (data.success && data.data?.paymentUrl) {
+        window.open(data.data.paymentUrl, "_blank", "noopener");
+        setCryptoErr("__pending__");
+      } else {
+        setCryptoErr(data.error?.message || "Failed to create payment — please try again.");
+      }
+    } catch {
+      setCryptoErr("Could not connect to payment provider. Please try again.");
+    }
+    setCryptoLoading(false);
   };
 
   const TIER_FEATURES = {
@@ -9098,120 +9151,184 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
     </div>
   );
 
-  // ── Trial signup modal ────────────────────────────────────────────────────
+  // ── Checkout screen ───────────────────────────────────────────────────────
   if (trialStep) {
     const t = TIERS[trialStep.tierId];
     const price = trialStep.billing === "annual" ? t.annual : t.monthly;
+    const tierApiMap = { "45":"core_45", "65":"pro_65", "95":"elite_95" };
     return (
-      <div className="fi" style={{ maxWidth: 640, margin: "0 auto" }}>
-        <button className="btn bg" style={{ padding: "7px 14px", fontSize: 11, display: "flex", alignItems: "center", gap: 6, marginBottom: 20 }} onClick={() => setTrialStep(null)}>
+      <div className="fi" style={{ maxWidth: 660, margin: "0 auto" }}>
+        <button className="btn bg" style={{ padding: "7px 14px", fontSize: 11, display: "flex", alignItems: "center", gap: 6, marginBottom: 24 }} onClick={() => { setTrialStep(null); setPayMethod("card"); setCryptoErr(""); }}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7" /></svg>
           Back to Plans
         </button>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) min(280px,42%)", gap: 20, alignItems: "start" }}>
-          <div>
-            {/* Trial banner */}
-            <div style={{ padding: "16px 20px", background: "linear-gradient(135deg,rgba(41,168,255,.08),rgba(41,168,255,.03))", border: `1px solid ${C.accentDim}`, borderRadius: 10, marginBottom: 18 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <div style={{ padding: "2px 10px", background: C.accentGlow, border: `1px solid ${C.accentDim}`, borderRadius: 4 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: C.accent, letterSpacing: ".08em" }}>7-DAY FREE TRIAL</span>
-                </div>
-                <span style={{ fontSize: 11, color: C.textDim }}>then ${price}/month · cancel anytime</span>
-              </div>
-              <h2 className="df" style={{ fontFamily: "'Counter-Strike',sans-serif", fontSize: 18, fontWeight: 300, color: C.text, letterSpacing: ".04em", marginBottom: 4 }}>Start Your {t.label} Trial</h2>
-              <p style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.7 }}>
-                Full access to all {t.label} features for 7 days, completely free. Card details are required to activate — you will not be charged until the trial ends. Cancel before day 7 and you owe nothing.
-              </p>
-            </div>
 
-            <div className="mc" style={{ padding: "22px 22px" }}>
-              <div className="sl" style={{ marginBottom: 18 }}>Card Details</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 11, color: C.textDim, display: "block", marginBottom: 6, letterSpacing: ".07em", textTransform: "uppercase" }}>Cardholder Name</label>
-                  <input className="inp" placeholder="Full name on card" value={trialCard.name} onChange={e => setTrialCard(p => ({ ...p, name: e.target.value }))} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 11, color: C.textDim, display: "block", marginBottom: 6, letterSpacing: ".07em", textTransform: "uppercase" }}>Card Number</label>
-                  <div style={{ position: "relative" }}>
-                    <input className="inp" placeholder="0000 0000 0000 0000" value={trialCard.num} onChange={e => setTrialCard(p => ({ ...p, num: fmtCard(e.target.value) }))} style={{ paddingRight: 48 }} />
-                    <div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", display: "flex", gap: 4 }}>
-                      {["V","M"].map(b => <div key={b} style={{ width: 22, height: 15, borderRadius: 3, background: b==="V"?"#1a1f6e":"#eb001b", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 6, color: "#fff", fontWeight: 700 }}>{b==="V"?"VISA":"MC"}</span></div>)}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  <div>
-                    <label style={{ fontSize: 11, color: C.textDim, display: "block", marginBottom: 6, letterSpacing: ".07em", textTransform: "uppercase" }}>Expiry</label>
-                    <input className="inp" placeholder="MM/YY" value={trialCard.exp} onChange={e => setTrialCard(p => ({ ...p, exp: fmtExp(e.target.value) }))} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, color: C.textDim, display: "block", marginBottom: 6, letterSpacing: ".07em", textTransform: "uppercase" }}>CVV</label>
-                    <input className="inp" placeholder="•••" type="password" maxLength={4} value={trialCard.cvv} onChange={e => setTrialCard(p => ({ ...p, cvv: e.target.value.replace(/\D/g,"").slice(0,4) }))} />
-                  </div>
-                </div>
+        {/* Header */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", color: C.textDim, textTransform: "uppercase", marginBottom: 6 }}>Checkout</div>
+          <h2 className="df" style={{ fontFamily: "'Counter-Strike',sans-serif", fontSize: 22, fontWeight: 300, color: C.text, letterSpacing: ".04em", marginBottom: 4 }}>{t.label} Plan</h2>
+          <div style={{ fontSize: 13, color: C.textMuted }}>${price}/month · {trialStep.billing === "annual" ? "billed annually" : "billed monthly"}</div>
+        </div>
+
+        {/* Payment method selector — two equal cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 24 }}>
+          {/* Card option */}
+          <div onClick={() => { setPayMethod("card"); setCryptoErr(""); }}
+            style={{ padding: "16px 18px", borderRadius: 10, border: `2px solid ${payMethod==="card" ? C.accent : C.border}`, background: payMethod==="card" ? `${C.accent}08` : C.surface, cursor: "pointer", transition: "all .15s" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: payMethod==="card" ? `${C.accent}15` : "rgba(255,255,255,.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>💳</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: payMethod==="card" ? C.accent : C.text }}>Pay by Card</div>
+                <div style={{ fontSize: 10, color: C.textDim }}>Visa, Mastercard</div>
               </div>
-              <hr className="dv" style={{ margin: "20px 0" }} />
-              <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", marginBottom: 18 }}>
-                <div onClick={() => setAgreedTrial(!agreedTrial)} style={{ width: 16, height: 16, borderRadius: 3, border: `1px solid ${agreedTrial ? C.accent : C.border}`, background: agreedTrial ? C.accentGlow : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all .15s" }}>
-                  {agreedTrial && <IC n="check" s={9} c={C.accent} />}
-                </div>
-                <span style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.7 }}>
-                  I understand that after the 7-day free trial, I will be automatically charged <strong style={{ color: C.text }}>${price}/month</strong> ({trialStep.billing === "annual" ? "billed annually" : "billed monthly"}) until I cancel. I can cancel at any time before the trial ends at no cost.
-                </span>
-              </label>
-              <button
-                className="btn bp"
-                style={{ width: "100%", padding: 14, fontSize: 13, opacity: (trialCardValid && agreedTrial && !trialProcessing) ? 1 : 0.42, cursor: (trialCardValid && agreedTrial && !trialProcessing) ? "pointer" : "not-allowed" }}
-                onClick={handleStartTrial}
-                disabled={!trialCardValid || !agreedTrial || trialProcessing}>
-                {trialProcessing
-                  ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: C.bg, display: "inline-block" }} />
-                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: C.bg, display: "inline-block", animationDelay: ".15s" }} />
-                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: C.bg, display: "inline-block", animationDelay: ".3s" }} />
-                    </span>
-                  : "Activate Free Trial →"}
-              </button>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 14 }}>
-                {[{icon:"shield",label:"256-bit SSL"},{icon:"lock",label:"Secure"},{icon:"check",label:"Cancel Anytime"}].map(b => (
-                  <div key={b.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <IC n={b.icon} s={11} c={C.textDim} />
-                    <span style={{ fontSize: 10, color: C.textDim }}>{b.label}</span>
-                  </div>
-                ))}
-              </div>
+              <div style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: "50%", border: `2px solid ${payMethod==="card" ? C.accent : C.border}`, background: payMethod==="card" ? C.accent : "transparent", transition: "all .15s" }}/>
+            </div>
+            <div style={{ padding: "7px 10px", borderRadius: 5, background: `${C.accent}10`, border: `1px solid ${C.accentDim}` }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.accent, letterSpacing: ".06em" }}>INCLUDES 7-DAY FREE TRIAL</div>
+              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>No charge today — cancel before day 7</div>
             </div>
           </div>
 
-          {/* Summary sidebar */}
-          <div style={{ position: "sticky", top: 20 }}>
-            <div className="mc" style={{ padding: "18px 18px" }}>
-              <div style={{ textAlign: "center", paddingBottom: 14, borderBottom: `1px solid ${C.border}`, marginBottom: 14 }}>
-                <div style={{ fontSize: 22, color: C.accent, fontWeight: 700, lineHeight: 1, marginBottom: 4 }}>$0 today</div>
-                <div style={{ fontSize: 10, color: C.textDim, letterSpacing: ".08em" }}>THEN ${price}/MONTH AFTER 7 DAYS</div>
+          {/* Crypto option */}
+          <div onClick={() => { setPayMethod("crypto"); setCryptoErr(""); }}
+            style={{ padding: "16px 18px", borderRadius: 10, border: `2px solid ${payMethod==="crypto" ? "#f7931a" : C.border}`, background: payMethod==="crypto" ? "rgba(247,147,26,.06)" : C.surface, cursor: "pointer", transition: "all .15s" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: payMethod==="crypto" ? "rgba(247,147,26,.15)" : "rgba(255,255,255,.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>₿</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: payMethod==="crypto" ? "#f7931a" : C.text }}>Pay with Crypto</div>
+                <div style={{ fontSize: 10, color: C.textDim }}>BTC, ETH, USDT &amp; more</div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-                {[
-                  `Full ${t.label} access for 7 days`,
-                  "No charge during trial period",
-                  "Cancel before day 7 — owe nothing",
-                  "Auto-renews at plan rate",
-                  "All features unlocked immediately",
-                ].map((f,i) => (
-                  <div key={i} style={{ display: "flex", gap: 8 }}>
-                    <IC n="check" s={11} c={C.accent} />
-                    <span style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.5 }}>{f}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ padding: "10px 12px", background: "rgba(233,30,167,.05)", border: "1px solid rgba(233,30,167,.12)", borderRadius: 6 }}>
-                <div style={{ fontSize: 11, color: C.pink, fontWeight: 600, marginBottom: 3 }}>Trial reminder</div>
-                <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.6 }}>We will email you 24 hours before your trial ends as a reminder. You will not be charged if you cancel before {new Date(Date.now()+7*864e5).toLocaleDateString("en-GB",{day:"numeric",month:"long"})}.</div>
-              </div>
+              <div style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: "50%", border: `2px solid ${payMethod==="crypto" ? "#f7931a" : C.border}`, background: payMethod==="crypto" ? "#f7931a" : "transparent", transition: "all .15s" }}/>
+            </div>
+            <div style={{ padding: "7px 10px", borderRadius: 5, background: "rgba(247,147,26,.08)", border: "1px solid rgba(247,147,26,.2)" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#f7931a", letterSpacing: ".06em" }}>IMMEDIATE ACCESS</div>
+              <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>Pay ${price} now · no trial required</div>
             </div>
           </div>
         </div>
+
+        {/* Card payment form */}
+        {payMethod === "card" && (
+        <div className="mc" style={{ padding: "22px 24px", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+            <div className="sl">Card Details</div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {["V","M"].map(b => <div key={b} style={{ width: 26, height: 17, borderRadius: 3, background: b==="V"?"#1a1f6e":"#eb001b", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 7, color: "#fff", fontWeight: 700 }}>{b==="V"?"VISA":"MC"}</span></div>)}
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <label style={{ fontSize: 11, color: C.textDim, display: "block", marginBottom: 6, letterSpacing: ".07em", textTransform: "uppercase" }}>Cardholder Name</label>
+              <input className="inp" placeholder="Full name on card" value={trialCard.name} onChange={e => setTrialCard(p => ({ ...p, name: e.target.value }))} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: C.textDim, display: "block", marginBottom: 6, letterSpacing: ".07em", textTransform: "uppercase" }}>Card Number</label>
+              <input className="inp" placeholder="0000 0000 0000 0000" value={trialCard.num} onChange={e => setTrialCard(p => ({ ...p, num: fmtCard(e.target.value) }))} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, color: C.textDim, display: "block", marginBottom: 6, letterSpacing: ".07em", textTransform: "uppercase" }}>Expiry</label>
+                <input className="inp" placeholder="MM/YY" value={trialCard.exp} onChange={e => setTrialCard(p => ({ ...p, exp: fmtExp(e.target.value) }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: C.textDim, display: "block", marginBottom: 6, letterSpacing: ".07em", textTransform: "uppercase" }}>CVV</label>
+                <input className="inp" placeholder="•••" type="password" maxLength={4} value={trialCard.cvv} onChange={e => setTrialCard(p => ({ ...p, cvv: e.target.value.replace(/\D/g,"").slice(0,4) }))} />
+              </div>
+            </div>
+          </div>
+          <hr className="dv" style={{ margin: "20px 0" }} />
+          <div style={{ padding: "12px 14px", background: `${C.accent}06`, border: `1px solid ${C.accentDim}`, borderRadius: 7, marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.accent, marginBottom: 4 }}>7-Day Free Trial</div>
+            <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.7 }}>You won't be charged today. Your first payment of <strong style={{ color: C.text }}>${price}</strong> is due on {new Date(Date.now()+7*864e5).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})} unless you cancel before then.</div>
+          </div>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", marginBottom: 18 }}>
+            <div onClick={() => setAgreedTrial(!agreedTrial)} style={{ width: 16, height: 16, borderRadius: 3, border: `1px solid ${agreedTrial ? C.accent : C.border}`, background: agreedTrial ? C.accentGlow : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1, transition: "all .15s" }}>
+              {agreedTrial && <IC n="check" s={9} c={C.accent} />}
+            </div>
+            <span style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.7 }}>
+              I agree that after my free trial I will be charged <strong style={{ color: C.text }}>${price}/month</strong> ({trialStep.billing === "annual" ? "billed annually" : "billed monthly"}) until I cancel.
+            </span>
+          </label>
+          <button className="btn bp" style={{ width: "100%", padding: 14, fontSize: 13, opacity: (trialCardValid && agreedTrial && !trialProcessing) ? 1 : 0.4 }} onClick={handleStartTrial} disabled={!trialCardValid || !agreedTrial || trialProcessing}>
+            {trialProcessing
+              ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: C.bg, display: "inline-block" }}/>
+                  <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: C.bg, display: "inline-block", animationDelay: ".15s" }}/>
+                  <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: C.bg, display: "inline-block", animationDelay: ".3s" }}/>
+                </span>
+              : "Start Free Trial — $0 Today →"}
+          </button>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 14 }}>
+            {[{icon:"shield",label:"256-bit SSL"},{icon:"lock",label:"Secure"},{icon:"check",label:"Cancel Anytime"}].map(b => (
+              <div key={b.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <IC n={b.icon} s={11} c={C.textDim}/>
+                <span style={{ fontSize: 10, color: C.textDim }}>{b.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        )}
+
+        {/* Crypto payment */}
+        {payMethod === "crypto" && (
+        <div className="mc" style={{ padding: "22px 24px", marginBottom: 16 }}>
+          {cryptoErr === "__pending__" ? (
+            <div style={{ textAlign: "center", padding: "20px 0" }}>
+              <div style={{ fontSize: 40, marginBottom: 14 }}>₿</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 8 }}>Payment window opened</div>
+              <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.8, marginBottom: 20, maxWidth: 380, margin: "0 auto 20px" }}>
+                Complete your payment in the Syrax tab. Your Fortitude access activates automatically once the transaction confirms on-chain — typically 1–5 minutes.
+              </div>
+              <div style={{ padding: "12px 16px", borderRadius: 7, background: "rgba(247,147,26,.06)", border: "1px solid rgba(247,147,26,.2)", marginBottom: 20, textAlign: "left" }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#f7931a", marginBottom: 4 }}>What happens next</div>
+                <div style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.7 }}>Once your payment confirms, log out and back in — your new plan will be active. If it hasn't updated after 10 minutes, contact support.</div>
+              </div>
+              <button className="btn bg" style={{ fontSize: 12, padding: "9px 24px" }} onClick={() => window.location.reload()}>
+                I've paid — activate my account →
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 20 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>Total due today</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: C.text, fontFamily: "JetBrains Mono,monospace", lineHeight: 1 }}>${price}<span style={{ fontSize: 12, color: C.textDim, fontWeight: 400 }}> USD</span></div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 11, color: C.textDim, marginBottom: 3 }}>Plan</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{t.label}</div>
+                  <div style={{ fontSize: 11, color: C.textDim }}>{trialStep.billing === "annual" ? "Annual" : "Monthly"}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 22 }}>
+                {["Pay with BTC, ETH, USDT and 20+ cryptocurrencies","Access activates automatically on-chain confirmation","Secure hosted checkout — we never see your wallet","No trial — full access starts immediately after payment"].map(f => (
+                  <div key={f} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+                    <IC n="check" s={11} c="#f7931a" style={{ flexShrink: 0, marginTop: 2 }}/>
+                    <span style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.6 }}>{f}</span>
+                  </div>
+                ))}
+              </div>
+              {cryptoErr && (
+                <div style={{ padding: "10px 14px", borderRadius: 6, background: "rgba(233,30,167,.06)", border: "1px solid rgba(233,30,167,.25)", marginBottom: 14 }}>
+                  <span style={{ fontSize: 12, color: C.pink }}>{cryptoErr}</span>
+                </div>
+              )}
+              <button
+                style={{ width: "100%", padding: 15, fontSize: 14, fontWeight: 700, background: "linear-gradient(135deg,#f7931a,#f7c31a)", color: "#000", border: "none", borderRadius: 8, cursor: cryptoLoading ? "not-allowed" : "pointer", opacity: cryptoLoading ? 0.6 : 1, letterSpacing: ".02em" }}
+                onClick={handleCryptoCheckout} disabled={cryptoLoading}>
+                {cryptoLoading
+                  ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: "#000", display: "inline-block" }}/>
+                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: "#000", display: "inline-block", animationDelay: ".15s" }}/>
+                      <span className="pu" style={{ width: 6, height: 6, borderRadius: "50%", background: "#000", display: "inline-block", animationDelay: ".3s" }}/>
+                    </span>
+                  : `Pay $${price} with Crypto →`}
+              </button>
+              <div style={{ fontSize: 10, color: C.textDim, textAlign: "center", marginTop: 12 }}>Powered by Syrax Pay · Secure on-chain settlement</div>
+            </>
+          )}
+        </div>
+        )}
       </div>
     );
   }
@@ -9287,8 +9404,8 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
                 : t.monthly === 0
                 ? null
                 : <button className="btn bp" style={{ width:"100%", fontSize:11, padding:"9px 0" }}
-                    onClick={() => setTrialStep({ tierId: t.id, billing: billingAnnual ? "annual" : "monthly" })}>
-                    Start Free Trial
+                    onClick={() => { setTrialStep({ tierId: t.id, billing: billingAnnual ? "annual" : "monthly" }); setPayMethod("card"); setCryptoErr(""); }}>
+                    Get Started →
                   </button>
               }
             </div>
