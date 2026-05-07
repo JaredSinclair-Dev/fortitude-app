@@ -11108,7 +11108,7 @@ const Admin = ({ setPage }) => {
           <div>
             <div className="sl" style={{ marginBottom:4 }}>Crypto Payment Test</div>
             <div style={{ fontSize:12, color:C.textMuted, maxWidth:420, lineHeight:1.7 }}>
-              Creates a real $1 Syrax invoice and opens the payment page. Use this to verify the end-to-end crypto checkout flow with live funds. Remove this card once confirmed.
+              Creates a real $1 Syrax invoice and opens the payment page. Use this to demonstrate or test the end-to-end crypto checkout flow with live funds.
             </div>
             {testPayMsg && (
               <div style={{ marginTop:10, fontSize:12, color: testPayMsg.startsWith("✓") ? C.accent : C.pink }}>
