@@ -10940,6 +10940,25 @@ const Admin = ({ setPage }) => {
   const [overrideMsg,   setOverrideMsg]   = useState("");
   const [overrideSaving,setOverrideSaving]= useState(false);
 
+  // $1 crypto test payment
+  const [testPayLoading, setTestPayLoading] = useState(false);
+  const [testPayMsg,     setTestPayMsg]     = useState("");
+  const handleTestCryptoPayment = async () => {
+    setTestPayLoading(true); setTestPayMsg("");
+    try {
+      const data = await api.post("/billing/crypto/checkout", { tier: "test_1", billing_cycle: "monthly" }, token);
+      if (data.success && data.data?.paymentUrl) {
+        window.open(data.data.paymentUrl, "_blank", "noopener");
+        setTestPayMsg("✓ Syrax checkout opened in a new tab. Complete the $1 payment there.");
+      } else {
+        setTestPayMsg("✗ " + (data.error?.message || "Failed to create test invoice."));
+      }
+    } catch {
+      setTestPayMsg("✗ Could not reach payment provider.");
+    }
+    setTestPayLoading(false);
+  };
+
   useEffect(() => {
     if (!token) return;
     setLoadingKPI(true);
@@ -11080,6 +11099,27 @@ const Admin = ({ setPage }) => {
               {overrideSaving ? "Applying…" : "Apply Override"}
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* $1 Crypto payment test */}
+      <div className="mc" style={{ marginBottom:14, border:`1px solid ${C.accent}30` }}>
+        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:16, flexWrap:"wrap" }}>
+          <div>
+            <div className="sl" style={{ marginBottom:4 }}>Crypto Payment Test</div>
+            <div style={{ fontSize:12, color:C.textMuted, maxWidth:420, lineHeight:1.7 }}>
+              Creates a real $1 Syrax invoice and opens the payment page. Use this to verify the end-to-end crypto checkout flow with live funds. Remove this card once confirmed.
+            </div>
+            {testPayMsg && (
+              <div style={{ marginTop:10, fontSize:12, color: testPayMsg.startsWith("✓") ? C.accent : C.pink }}>
+                {testPayMsg}
+              </div>
+            )}
+          </div>
+          <button className="btn bp" style={{ fontSize:12, padding:"9px 20px", flexShrink:0, opacity: testPayLoading ? 0.5 : 1 }}
+            onClick={handleTestCryptoPayment} disabled={testPayLoading}>
+            {testPayLoading ? "Creating invoice…" : "Test $1 Payment →"}
+          </button>
         </div>
       </div>
 
