@@ -1899,22 +1899,18 @@ const LivePriceTicker = () => {
 
   const fetchPrices = async () => {
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 600,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-          messages: [{
-            role: "user",
-            content: `Get the current live market prices right now for these instruments and return ONLY a valid JSON object with no other text: XAU/USD (gold spot price), EUR/USD, GBP/USD, USD/JPY, BTC/USD (Bitcoin), ETH/USD (Ethereum), S&P 500 index, and Brent crude oil price. Format: {"XAUUSD":{"price":2345.50,"change":+0.42},"EURUSD":{"price":1.0842,"change":-0.12},...} Use the change as the % change today. Search for current prices now.`
-          }]
-        })
-      });
-      const data = await res.json();
-      // Find the text content block with our JSON
-      const textBlock = data.content?.find(b => b.type === "text");
+      const token = localStorage.getItem("fis_token");
+      const data = await api.post("/ai/chat", {
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 600,
+        type: "price",
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        messages: [{
+          role: "user",
+          content: `Get the current live market prices right now for these instruments and return ONLY a valid JSON object with no other text: XAU/USD (gold spot price), EUR/USD, GBP/USD, USD/JPY, BTC/USD (Bitcoin), ETH/USD (Ethereum), S&P 500 index, and Brent crude oil price. Format: {"XAUUSD":{"price":2345.50,"change":+0.42},"EURUSD":{"price":1.0842,"change":-0.12},...} Use the change as the % change today. Search for current prices now.`
+        }]
+      }, token);
+      const textBlock = data.data?.content?.find(b => b.type === "text");
       if (textBlock?.text) {
         const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -1997,22 +1993,19 @@ const AIInsightFeed = () => {
   const [fade, setFade] = useState(true);
 
   useEffect(() => {
-    fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 400,
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
-        messages: [{
-          role: "user",
-          content: "Search for today's top 5 macro market insights for forex/commodities traders. Return ONLY a JSON array of 5 short strings (under 15 words each), each describing one current market observation. Example format: [\"USD strength building as Fed maintains hawkish stance\", ...]"
-        }]
-      })
-    })
-    .then(r => r.json())
+    const token = localStorage.getItem("fis_token");
+    api.post("/ai/chat", {
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 400,
+      type: "insights",
+      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      messages: [{
+        role: "user",
+        content: "Search for today's top 5 macro market insights for forex/commodities traders. Return ONLY a JSON array of 5 short strings (under 15 words each), each describing one current market observation. Example format: [\"USD strength building as Fed maintains hawkish stance\", ...]"
+      }]
+    }, token)
     .then(data => {
-      const text = data.content?.find(b => b.type === "text")?.text || "";
+      const text = data.data?.content?.find(b => b.type === "text")?.text || "";
       const match = text.match(/\[[\s\S]*?\]/);
       if (match) {
         const parsed = JSON.parse(match[0]);
@@ -4500,9 +4493,9 @@ const Coach = () => {
     const next=[...messages,um];
     setMessages(next); setInput(""); setLoading(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:COACH_PROMPT,messages:next.map(m=>({role:m.r==="a"?"assistant":"user",content:m.t}))})});
-      const data = await res.json();
-      const reply = data.content?.find(b=>b.type==="text")?.text||"Session processing error. Please retry.";
+      const token = localStorage.getItem("fis_token");
+      const data = await api.post("/ai/chat", { model:"claude-sonnet-4-20250514", max_tokens:1000, type:"coach", system:COACH_PROMPT, messages:next.map(m=>({role:m.r==="a"?"assistant":"user",content:m.t})) }, token);
+      const reply = data.data?.content?.find(b=>b.type==="text")?.text||"Session processing error. Please retry.";
       setMessages(p=>[...p,{r:"a",t:reply}]);
     } catch { setMessages(p=>[...p,{r:"a",t:"Connection error. Please check your network and try again."}]); }
     setLoading(false);
@@ -7538,13 +7531,12 @@ const CourseTutor = ({ lesson, course, lessonDb }) => {
     setLoading(true);
     try {
       const lessonContent = lessonData.content ? lessonData.content.slice(0, 2000) : '';
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: `You are an expert trading educator for the Fortitude platform — an institutional-grade trading education platform built on the Fortitude Market Framework (FMF).
+      const token = localStorage.getItem("fis_token");
+      const data = await api.post("/ai/chat", {
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        type: "tutor",
+        system: `You are an expert trading educator for the Fortitude platform — an institutional-grade trading education platform built on the Fortitude Market Framework (FMF).
 
 You are helping a student studying: "${lessonData.title || lesson.title}" in the course "${course.title}".
 
@@ -7554,14 +7546,12 @@ ${lessonContent}
 ---
 
 Your role: world-class trading tutor. Be precise, intellectually honest, and practically grounded. Use real market examples. Reinforce correct thinking. Challenge assumptions constructively. Keep responses focused — this is a conversational interface, not an essay. Use markdown **bold** for key terms. Never give financial advice or specific trade recommendations.`,
-          messages: [
-            ...msgs.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
-            { role: "user", content: q }
-          ]
-        })
-      });
-      const data = await res.json();
-      const text = data.content?.[0]?.text || "I couldn't generate a response. Please try again.";
+        messages: [
+          ...msgs.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })),
+          { role: "user", content: q }
+        ]
+      }, token);
+      const text = data.data?.content?.[0]?.text || "I couldn't generate a response. Please try again.";
       setMsgs(m => [...m, { role: "assistant", text }]);
     } catch (e) {
       setMsgs(m => [...m, { role: "assistant", text: "Connection error. Please try again." }]);
@@ -10305,16 +10295,15 @@ const QuantResearchAnalyst = ({ currentTier, setPage }) => {
     if (!isElite) return;
     setLoadingFeed(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-          messages: [{
-            role: "user",
-            content: `Search for the top 5 most important macro market events happening right now or in the last 48 hours (central bank decisions, inflation data, geopolitical events, major economic releases). For each event return a JSON array with this exact structure. Return ONLY the JSON array, no other text:
+      const token = localStorage.getItem("fis_token");
+      const data = await api.post("/ai/chat", {
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2000,
+        type: "quant-feed",
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        messages: [{
+          role: "user",
+          content: `Search for the top 5 most important macro market events happening right now or in the last 48 hours (central bank decisions, inflation data, geopolitical events, major economic releases). For each event return a JSON array with this exact structure. Return ONLY the JSON array, no other text:
 [{
   "id":"ev1",
   "headline":"Short headline",
@@ -10338,11 +10327,9 @@ const QuantResearchAnalyst = ({ currentTier, setPage }) => {
   "timestamp":"2026-03-22T10:00:00Z"
 }]
 Use 1 for bullish, -1 for bearish, 0 for neutral in assets. Make impactScore 1-10.`
-          }]
-        })
-      });
-      const data = await res.json();
-      const textBlock = data.content?.find(b => b.type === "text");
+        }]
+      }, token);
+      const textBlock = data.data?.content?.find(b => b.type === "text");
       if (textBlock?.text) {
         const jsonMatch = textBlock.text.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
@@ -10364,23 +10351,20 @@ Use 1 for bullish, -1 for bearish, 0 for neutral in assets. Make impactScore 1-1
   const fetchLiveAssets = async () => {
     if (!isElite) return;
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 800,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-          messages: [{
-            role: "user",
-            content: `Get current live prices and directional bias for these assets: Gold (XAU/USD), US Dollar Index (DXY), Brent Crude Oil, S&P 500, US 10Y Bond Yield, EUR/USD, USD/JPY, Bitcoin (BTC/USD). Return ONLY this JSON array:
+      const token = localStorage.getItem("fis_token");
+      const data = await api.post("/ai/chat", {
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 800,
+        type: "quant-assets",
+        tools: [{ type: "web_search_20250305", name: "web_search" }],
+        messages: [{
+          role: "user",
+          content: `Get current live prices and directional bias for these assets: Gold (XAU/USD), US Dollar Index (DXY), Brent Crude Oil, S&P 500, US 10Y Bond Yield, EUR/USD, USD/JPY, Bitcoin (BTC/USD). Return ONLY this JSON array:
 [{"asset":"Gold","sym":"XAU/USD","bias":1,"score":7,"reason":"brief reason","change":"+0.5%","price":"2345.50"},{"asset":"US Dollar","sym":"DXY",...}]
 bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current prices.`
-          }]
-        })
-      });
-      const data = await res.json();
-      const textBlock = data.content?.find(b => b.type === "text");
+        }]
+      }, token);
+      const textBlock = data.data?.content?.find(b => b.type === "text");
       if (textBlock?.text) {
         const jsonMatch = textBlock.text.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
@@ -10432,16 +10416,14 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
   const runAiAnalysis = async (event) => {
     setAnalysing(true); setAiAnalysis("");
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:1000,
-          messages:[{ role:"user", content:`You are a senior macro analyst at a hedge fund. Analyse this market event and provide an institutional-grade trading implication note. Be direct, precise, and actionable. 3 short paragraphs: (1) Core macro implication, (2) Specific asset trading bias with instrument names, (3) Key risks and invalidation. Under 180 words. Think like a macro PM.\n\nEvent: ${event.headline}\nCategory: ${event.category}\nWhat happened: ${event.summary}\nImmediate impact: ${event.immediateImpact}` }]
-        })
-      });
-      const data = await res.json();
-      setAiAnalysis(data.content?.[0]?.text || "Analysis unavailable.");
+      const token = localStorage.getItem("fis_token");
+      const data = await api.post("/ai/chat", {
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        type: "quant-analysis",
+        messages: [{ role: "user", content: `You are a senior macro analyst at a hedge fund. Analyse this market event and provide an institutional-grade trading implication note. Be direct, precise, and actionable. 3 short paragraphs: (1) Core macro implication, (2) Specific asset trading bias with instrument names, (3) Key risks and invalidation. Under 180 words. Think like a macro PM.\n\nEvent: ${event.headline}\nCategory: ${event.category}\nWhat happened: ${event.summary}\nImmediate impact: ${event.immediateImpact}` }]
+      }, token);
+      setAiAnalysis(data.data?.content?.[0]?.text || "Analysis unavailable.");
     } catch { setAiAnalysis("Unable to generate analysis. Please try again."); }
     finally { setAnalysing(false); }
   };
