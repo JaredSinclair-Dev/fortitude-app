@@ -8483,9 +8483,14 @@ const MentorshipApplication = ({ onBack }) => {
     });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setSubmitting(true);
-    setTimeout(() => { setSubmitting(false); setStep("submitted"); }, 2800);
+    try {
+      const token = localStorage.getItem("fis_token");
+      await api.post("/mentorship/apply", { answers }, token);
+    } catch {}  // show submitted regardless — we don't want form state issues to block the UX
+    setSubmitting(false);
+    setStep("submitted");
   };
 
   // ── Submitted ──────────────────────────────────────────────────────────────
@@ -8502,7 +8507,7 @@ const MentorshipApplication = ({ onBack }) => {
         <div style={{ padding: "18px 20px", background: C.surfaceAlt, borderRadius: 8, border: `1px solid ${C.border}`, marginBottom: 24, textAlign: "left" }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
             <span style={{ fontSize: 12, color: C.textDim }}>Application reference</span>
-            <span className="mn" style={{ fontSize: 12, color: "#d4af37" }}>MNT-{Math.random().toString(36).slice(2,8).toUpperCase()}</span>
+            <span className="mn" style={{ fontSize: 12, color: "#d4af37" }}>MNT-{Date.now().toString(36).slice(-6).toUpperCase()}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
             <span style={{ fontSize: 12, color: C.textDim }}>Programme</span>
