@@ -5007,8 +5007,57 @@ const BehavioralEngine = ({ setPage, engineTrades = [] }) => {
 
 const Education = () => {
   const [active, setActive] = useState(null);
-  const courses=[{id:1,title:"Beginner Trading Course",lessons:12,done:12,pct:100,tier:"Free",tc:"ta"},{id:2,title:"Beginner Crypto Course",lessons:8,done:5,pct:63,tier:"Free",tc:"ta"},{id:3,title:"Fortitude Market Framework",lessons:24,done:16,pct:68,tier:"FMF Owner",tc:"tg2"},{id:4,title:"Workshop Series",lessons:6,done:0,pct:0,tier:"Mentorship",tc:"tb"},{id:5,title:"Mentorship Content",lessons:18,done:0,pct:0,tier:"Mentorship",tc:"tb",locked:true}];
+  // completedLessons: { [courseId]: Set<lessonId> }
+  const [completedLessons, setCompletedLessons] = useState({});
+  const [progressLoaded, setProgressLoaded] = useState(false);
+
+  // Load progress from backend on mount
+  useEffect(() => {
+    const token = localStorage.getItem("fis_token");
+    if (!token) { setProgressLoaded(true); return; }
+    api.get("/courses/progress", token)
+      .then(res => {
+        if (res.success && res.data?.progress) {
+          const map = {};
+          for (const [cid, lessons] of Object.entries(res.data.progress)) {
+            map[cid] = new Set(Object.keys(lessons).filter(lid => lessons[lid].completed).map(Number));
+          }
+          setCompletedLessons(map);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setProgressLoaded(true));
+  }, []);
+
+  const markLessonComplete = async (courseId, lessonId) => {
+    // Optimistic update
+    setCompletedLessons(prev => {
+      const s = new Set(prev[courseId] || []);
+      s.add(lessonId);
+      return { ...prev, [courseId]: s };
+    });
+    const token = localStorage.getItem("fis_token");
+    if (token) {
+      api.post("/courses/progress/complete", { courseId, lessonId: String(lessonId) }, token).catch(() => {});
+    }
+  };
+
+  // Build display courses from COURSES data
+  const displayCourses = COURSE_DATA.filter(c => c.id !== "mentorship").map(c => {
+    const allIds = c.sections.flatMap(s => s.lessonIds);
+    const doneSet = completedLessons[c.id] || new Set();
+    const done = allIds.filter(id => doneSet.has(id)).length;
+    const total = allIds.length || c.totalLessons || 0;
+    return {
+      id: c.id, title: c.title, lessons: total, done,
+      pct: total ? Math.round((done / total) * 100) : 0,
+      tier: c.badge, tc: c.tier === "free" ? "tg2" : c.tier === "purchase" ? "ta" : "ta",
+      locked: false, sections: c.sections,
+    };
+  });
+
   const TITLES=["Introduction to Market Structure","Understanding Timeframes","Liquidity Theory Fundamentals","Order Flow Concepts","Structural Bias Identification","Entry Framework Architecture","Risk Definition Methodology","Session Mechanics","Inducement Recognition","Scenario Construction","Trade Management Framework","Review & Application"];
+  const activeCourse = displayCourses.find(c => c.id === active);
   return (
     <div className="fi">
       <div style={{ marginBottom:28 }}>
@@ -5018,7 +5067,7 @@ const Education = () => {
       <div style={{ display:"grid",gridTemplateColumns:"1fr 2fr",gap:20 }}>
         <div>
           <div className="sl">Course Library</div>
-          {courses.map(c=>(
+          {displayCourses.map(c=>(
             <div key={c.id} className="mc" style={{ marginBottom:10,cursor:c.locked?"default":"pointer",opacity:c.locked?.55:1,borderColor:active===c.id?C.accentDim:undefined }} onClick={()=>!c.locked&&setActive(c.id===active?null:c.id)}>
               <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
                 <div style={{ display:"flex",alignItems:"center",gap:8 }}>
@@ -5033,21 +5082,25 @@ const Education = () => {
           ))}
         </div>
         <div>
-          {active?(
+          {activeCourse?(
             <div className="fi">
-              <div className="sl">{courses.find(c=>c.id===active)?.title} — Lesson Index</div>
+              <div className="sl">{activeCourse.title} — Lesson Index</div>
               <div style={{ background:"rgba(13,16,24,.82)",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",backdropFilter:"blur(8px)" }}>
-                {Array.from({length:courses.find(c=>c.id===active)?.lessons||6},(_,i)=>{
-                  const done=i<(courses.find(c=>c.id===active)?.done||0);
-                  return (<div key={i} style={{ display:"flex",alignItems:"center",gap:14,padding:"13px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer" }} onMouseEnter={e=>e.currentTarget.style.background=C.surfaceAlt} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                {activeCourse.sections.flatMap(s=>s.lessonIds).map((lessonId,i)=>{
+                  const done=(completedLessons[activeCourse.id]||new Set()).has(lessonId);
+                  const lessonObj = LESSON_DB[lessonId];
+                  return (<div key={lessonId} style={{ display:"flex",alignItems:"center",gap:14,padding:"13px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer" }}
+                    onMouseEnter={e=>e.currentTarget.style.background=C.surfaceAlt}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                    onClick={()=>!done&&markLessonComplete(activeCourse.id, lessonId)}>
                     <div style={{ width:24,height:24,borderRadius:"50%",background:done?C.accent:C.border,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
                       {done?<IC n="check" s={11} c={C.bg}/>:<span style={{ fontSize:10,color:C.textDim }}>{i+1}</span>}
                     </div>
-                    <div>
-                      <div style={{ fontSize:13,color:done?C.text:C.textMuted }}>Lesson {i+1} — {TITLES[i%12]}</div>
-                      <div style={{ fontSize:11,color:C.textDim,marginTop:2 }}>Video · PDF Reference</div>
+                    <div style={{ flex:1,minWidth:0 }}>
+                      <div style={{ fontSize:13,color:done?C.text:C.textMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{lessonObj?.title||`Lesson ${i+1}`}</div>
+                      <div style={{ fontSize:11,color:C.textDim,marginTop:2 }}>{lessonObj?.type||"lesson"} · {lessonObj?.duration||"–"}</div>
                     </div>
-                    {done&&<span className="tg ta" style={{ marginLeft:"auto" }}>Complete</span>}
+                    {done?<span className="tg ta" style={{ marginLeft:"auto",flexShrink:0 }}>Complete</span>:<span style={{ fontSize:10,color:C.textDim,marginLeft:"auto",flexShrink:0 }}>Click to mark</span>}
                   </div>);
                 })}
               </div>
@@ -7933,6 +7986,30 @@ function requiredTier(feature) {
 // ── Main Education component ─────────────────────────────────────────────
 function avatarColor(name){ let h=0; for(let c of name) h=(h*31+c.charCodeAt(0))%AVATAR_COLORS.length; return AVATAR_COLORS[h]; }
 
+// Map backend tier name to frontend display
+const tierToTag = (tier) => {
+  const map = { free:"Free", core_45:"Core", pro_65:"Pro", elite_95:"Elite", lifetime:"Elite", test_1:"Core" };
+  return map[tier] || "Member";
+};
+const tierToTc = (tier) => {
+  const map = { free:"tb", core_45:"ta", pro_65:"ta", elite_95:"tg2", lifetime:"tg2", test_1:"ta" };
+  return map[tier] || "tb";
+};
+
+// Convert a backend message into frontend display shape
+const backendMsgToFrontend = (m) => ({
+  id: m.id,
+  u: m.author?.name || m.author?.username || "Member",
+  tag: tierToTag(m.author?.tier),
+  tc: tierToTc(m.author?.tier),
+  avatar: (m.author?.name || m.author?.username || "M")[0].toUpperCase(),
+  time: new Date(m.createdAt).toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" }),
+  text: m.content,
+  reactions: Object.entries(m.reactions || {}).map(([e,n]) => ({ e, n: Number(n) })),
+  replyTo: null, // simplified — reply preview not fetched from backend
+  _backendId: m.id,
+});
+
 const Community = () => {
   const [messages, setMessages] = useState(() => {
     try {
@@ -7943,43 +8020,80 @@ const Community = () => {
   const [msg, setMsg] = useState("");
   const [replyTo, setReplyTo] = useState(null);
   const [hoverId, setHoverId] = useState(null);
+  const [channel, setChannel] = useState("general");
   const endRef = useRef(null);
   const inputRef = useRef(null);
+
   const ME = (() => {
     try {
       const u = JSON.parse(localStorage.getItem("fis_user") || "{}");
       const name = u.first_name && u.last_name ? `${u.first_name[0]}.${u.last_name}` : (u.email?.split("@")[0] || "Member");
       const avatar = (u.first_name?.[0] || "M").toUpperCase();
-      return { u: name, tag: "Member", tc: "tb", avatar };
+      const tag = tierToTag(u.tier);
+      const tc  = tierToTc(u.tier);
+      return { u: name, tag, tc, avatar };
     } catch { return { u:"Member", tag:"Member", tc:"tb", avatar:"M" }; }
   })();
 
-  // Persist messages to localStorage (keep last 200)
+  // Load messages from backend on mount / channel change
   useEffect(() => {
-    try { localStorage.setItem("fis_community_msgs", JSON.stringify(messages.slice(-200))); } catch {}
-  }, [messages]);
+    const token = localStorage.getItem("fis_token");
+    if (!token) return;
+    api.get(`/community/messages?channel=${channel}`, token)
+      .then(res => {
+        if (res.success && Array.isArray(res.data?.messages) && res.data.messages.length > 0) {
+          const mapped = res.data.messages.slice().reverse().map(backendMsgToFrontend);
+          setMessages(mapped);
+          try { localStorage.setItem("fis_community_msgs", JSON.stringify(mapped.slice(-200))); } catch {}
+        }
+      })
+      .catch(() => {}); // fall back to seeded / cached messages silently
+  }, [channel]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior:"smooth" }); }, [messages]);
 
-  const send = () => {
+  const send = async () => {
     if (!msg.trim()) return;
+    const content = msg.trim();
     const now = new Date();
     const time = now.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
-    setMessages(prev => [...prev, {
-      id: Date.now(), u:ME.u, tag:ME.tag, tc:ME.tc, avatar:ME.avatar,
-      time, text:msg.trim(), reactions:[],
+    const optimistic = {
+      id: `optimistic-${Date.now()}`, u:ME.u, tag:ME.tag, tc:ME.tc, avatar:ME.avatar,
+      time, text: content, reactions:[],
       replyTo: replyTo ? { u:replyTo.u, text:replyTo.text.slice(0,60)+"…" } : null,
-    }]);
+    };
+    setMessages(prev => [...prev, optimistic]);
     setMsg(""); setReplyTo(null);
+
+    // Persist to backend
+    const token = localStorage.getItem("fis_token");
+    if (token) {
+      api.post("/community/messages", { content, channel, replyTo: replyTo?._backendId || null }, token)
+        .then(res => {
+          if (res.success && res.data?.id) {
+            // Swap optimistic with real backend message
+            setMessages(prev => prev.map(m => m.id === optimistic.id ? { ...optimistic, id: res.data.id, _backendId: res.data.id } : m));
+          }
+        })
+        .catch(() => {}); // keep optimistic on failure
+    }
   };
 
   const addReaction = (id, emoji) => {
+    // Optimistic update
     setMessages(prev => prev.map(m => {
       if (m.id !== id) return m;
       const existing = m.reactions.find(r => r.e === emoji);
       if (existing) return { ...m, reactions: m.reactions.map(r => r.e===emoji ? {...r,n:r.n+1} : r) };
       return { ...m, reactions:[...m.reactions, {e:emoji,n:1}] };
     }));
+    // Sync to backend (best-effort)
+    const token = localStorage.getItem("fis_token");
+    if (token) {
+      const emojiMap = {"👍":"like","🔥":"fire","💯":"chart","🧠":"mindblown","🤔":"mindblown"};
+      const backendEmoji = emojiMap[emoji] || "like";
+      api.post(`/community/messages/${id}/react`, { emoji: backendEmoji }, token).catch(() => {});
+    }
   };
 
   const ONLINE = [];
@@ -8006,8 +8120,18 @@ const Community = () => {
           </div>
         </div>
 
+        {/* Channel tabs */}
+        <div style={{ display:"flex", gap:6, marginTop:12, flexWrap:"wrap" }}>
+          {[{id:"general",label:"General"},{id:"trade-ideas",label:"Trade Ideas"},{id:"wins",label:"Wins"},{id:"mindset",label:"Mindset"}].map(ch => (
+            <button key={ch.id} onClick={() => setChannel(ch.id)}
+              style={{ padding:"5px 14px", borderRadius:5, border:`1px solid ${channel===ch.id ? C.accent : C.border}`, background: channel===ch.id ? `${C.accent}14` : "transparent", color: channel===ch.id ? C.accent : C.textMuted, fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"Inter,sans-serif", transition:"all .15s" }}>
+              {ch.label}
+            </button>
+          ))}
+        </div>
+
         {/* Rules banner */}
-        <div style={{ display:"flex", gap:24, padding:"10px 16px", background:"rgba(13,16,24,.82)", border:`1px solid ${C.border}`, borderRadius:6, marginTop:12 }}>
+        <div style={{ display:"flex", gap:24, padding:"10px 16px", background:"rgba(13,16,24,.82)", border:`1px solid ${C.border}`, borderRadius:6, marginTop:10 }}>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             <span style={{ fontSize:10, fontWeight:600, color:C.accent, letterSpacing:".08em", textTransform:"uppercase" }}>✓ Permitted</span>
             <span style={{ fontSize:11, color:C.textMuted }}>Market structure · Framework discussion · Risk methodology</span>
@@ -8122,7 +8246,7 @@ const Community = () => {
               value={msg}
               onChange={e => setMsg(e.target.value)}
               onKeyDown={e => { if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); }}}
-              placeholder="Contribute to the structural discussion…  (Enter to send, Shift+Enter for new line)"
+              placeholder={`Message #${channel}…  (Enter to send, Shift+Enter for new line)`}
               style={{ flex:1, background:"rgba(17,21,32,.85)", border:`1px solid ${C.border}`, color:C.text, borderRadius:8, padding:"10px 14px", fontSize:13, fontFamily:"Inter,sans-serif", resize:"none", minHeight:42, maxHeight:120, outline:"none", lineHeight:1.5, transition:"border-color .2s" }}
               onFocus={e => e.target.style.borderColor=C.accent}
               onBlur={e => e.target.style.borderColor=C.border}
