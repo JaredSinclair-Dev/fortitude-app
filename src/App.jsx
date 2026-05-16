@@ -5148,6 +5148,115 @@ const EconomicCalendar = () => {
   );
 };
 
+// ── Legal Pages ───────────────────────────────────────────────────────────────
+const LegalPage = ({ title, lastUpdated, children, setPage }) => (
+  <div className="fi" style={{ maxWidth: 800, margin: "0 auto", padding: "0 0 60px" }}>
+    <button className="btn bg" style={{ padding: "7px 14px", fontSize: 11, display: "flex", alignItems: "center", gap: 6, marginBottom: 24 }} onClick={() => setPage("pricing")}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      Back
+    </button>
+    <h1 style={{ fontFamily: "'Counter-Strike',sans-serif", fontSize: 28, fontWeight: 300, color: C.text, letterSpacing: ".04em", marginBottom: 8 }}>{title}</h1>
+    <p style={{ fontSize: 12, color: C.textDim, marginBottom: 36 }}>Last updated: {lastUpdated} · Fortitude Market Intelligence (Pty) Ltd</p>
+    <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 2.0, background: "rgba(13,16,24,.82)", border: `1px solid ${C.border}`, borderRadius: 8, padding: "28px 32px" }}>
+      {children}
+    </div>
+  </div>
+);
+
+const Ls = ({ title, children }) => (
+  <div style={{ marginBottom: 28 }}>
+    <h2 style={{ fontFamily: "'Counter-Strike',sans-serif", fontSize: 15, fontWeight: 300, color: C.text, letterSpacing: ".04em", marginBottom: 10, borderBottom: `1px solid ${C.border}`, paddingBottom: 8 }}>{title}</h2>
+    {children}
+  </div>
+);
+
+const TermsOfService = ({ setPage }) => (
+  <LegalPage title="Terms of Service" lastUpdated="May 2026" setPage={setPage}>
+    <Ls title="1. Acceptance of Terms">
+      <p>By accessing or using Fortitude ("the Platform"), you agree to be bound by these Terms of Service. If you do not agree, do not use the Platform.</p>
+    </Ls>
+    <Ls title="2. Description of Service">
+      <p>Fortitude is a performance operating system for retail forex and CFD traders. It provides trade journaling, AI-assisted behavioural coaching, market intelligence, educational content, and community features. The Platform is provided on a subscription basis with tiered access.</p>
+    </Ls>
+    <Ls title="3. Not Financial Advice">
+      <p>Nothing on the Platform constitutes financial advice, investment advice, trading advice, or any other type of advice. All content, tools, AI outputs, market commentary, and analysis are for informational and educational purposes only. You are solely responsible for your own trading decisions. Fortitude Market Intelligence (Pty) Ltd accepts no liability for any trading losses or decisions made in reliance on Platform content.</p>
+    </Ls>
+    <Ls title="4. Subscriptions and Billing">
+      <p>Subscription fees are billed in advance on a monthly or annual basis. Your subscription renews automatically unless cancelled before the renewal date. You may cancel at any time through your Account settings. No refunds are issued for partial billing periods. Course and workshop purchases are one-time, non-refundable digital purchases.</p>
+    </Ls>
+    <Ls title="5. Acceptable Use">
+      <p>You agree not to: share your account credentials, redistribute or resell Platform content, use the Platform for any unlawful purpose, attempt to reverse-engineer or scrape any Platform component, or engage in abusive behaviour toward other community members.</p>
+    </Ls>
+    <Ls title="6. Intellectual Property">
+      <p>All Platform content — including course material, AI models, methodology, design, and software — is the exclusive property of Fortitude Market Intelligence (Pty) Ltd. No content may be reproduced, distributed, or published without explicit written consent.</p>
+    </Ls>
+    <Ls title="7. Limitation of Liability">
+      <p>To the maximum extent permitted by law, Fortitude Market Intelligence (Pty) Ltd shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the Platform.</p>
+    </Ls>
+    <Ls title="8. Governing Law">
+      <p>These Terms are governed by the laws of South Africa. Any disputes shall be resolved in the courts of South Africa.</p>
+    </Ls>
+    <Ls title="9. Changes to Terms">
+      <p>We may update these Terms at any time. Continued use of the Platform after changes constitutes acceptance of the revised Terms.</p>
+    </Ls>
+    <Ls title="10. Contact">
+      <p>For questions about these Terms, contact: <span style={{ color: C.accent }}>legal@fortitude.trade</span></p>
+    </Ls>
+  </LegalPage>
+);
+
+const PrivacyPolicy = ({ setPage }) => (
+  <LegalPage title="Privacy Policy" lastUpdated="May 2026" setPage={setPage}>
+    <Ls title="1. Information We Collect">
+      <p>We collect information you provide directly (name, email, password, trading journal entries, payment details), information generated through your use of the Platform (trade data, session activity, AI coaching interactions), and technical data (IP address, browser type, device identifiers).</p>
+    </Ls>
+    <Ls title="2. How We Use Your Information">
+      <p>We use your data to: provide and improve the Platform, personalise your experience, process payments, send transactional and product emails, compute performance metrics and behavioural scores, and comply with legal obligations. We do not sell your personal data to third parties.</p>
+    </Ls>
+    <Ls title="3. Data Sharing">
+      <p>We share data with: Anthropic (AI processing), Stripe and Syrax (payment processing), Resend (transactional email), Railway (cloud hosting), and Vercel (frontend hosting). Each processor is contractually bound to handle data in accordance with applicable privacy law.</p>
+    </Ls>
+    <Ls title="4. Data Retention">
+      <p>We retain your account data for as long as your account is active. Trade journal entries and performance data are retained to provide historical analytics. You may request deletion of your account and associated data by contacting us.</p>
+    </Ls>
+    <Ls title="5. Your Rights">
+      <p>Depending on your jurisdiction, you may have rights to access, correct, delete, or restrict processing of your personal data. To exercise these rights, contact: <span style={{ color: C.accent }}>privacy@fortitude.trade</span></p>
+    </Ls>
+    <Ls title="6. Cookies">
+      <p>We use essential cookies and localStorage to maintain your session and preferences. We do not use advertising cookies or third-party tracking pixels.</p>
+    </Ls>
+    <Ls title="7. Security">
+      <p>We implement industry-standard security measures including AES-256 encryption for sensitive data, JWT authentication with rotation, bcrypt password hashing, and HTTPS throughout. No method of transmission over the internet is 100% secure.</p>
+    </Ls>
+    <Ls title="8. Contact">
+      <p>Privacy enquiries: <span style={{ color: C.accent }}>privacy@fortitude.trade</span></p>
+    </Ls>
+  </LegalPage>
+);
+
+const RefundPolicy = ({ setPage }) => (
+  <LegalPage title="Refund Policy" lastUpdated="May 2026" setPage={setPage}>
+    <Ls title="Subscriptions">
+      <p>Monthly and annual subscriptions may be cancelled at any time. Cancellation takes effect at the end of the current billing period — you retain access until then. No partial-period refunds are issued.</p>
+    </Ls>
+    <Ls title="Annual Subscriptions">
+      <p>Annual subscriptions cancelled within 14 days of initial purchase may be eligible for a pro-rated refund, subject to review. Contact <span style={{ color: C.accent }}>support@fortitude.trade</span> within 14 days of purchase.</p>
+    </Ls>
+    <Ls title="Course & Workshop Purchases">
+      <p>One-time course and workshop purchases are non-refundable once access has been granted, as they constitute digital products delivered immediately. If you experience a technical issue preventing access, contact us and we will resolve it.</p>
+    </Ls>
+    <Ls title="Trial Periods">
+      <p>Trial access granted by invitation is not billed. If a trial converts to a paid subscription and you cancel within 48 hours of the first charge, a full refund may be requested.</p>
+    </Ls>
+    <Ls title="Disputes">
+      <p>Before initiating a chargeback, please contact us at <span style={{ color: C.accent }}>support@fortitude.trade</span> — we resolve billing disputes promptly. Chargebacks raised without prior contact may result in account suspension.</p>
+    </Ls>
+    <Ls title="Contact">
+      <p>Billing enquiries: <span style={{ color: C.accent }}>support@fortitude.trade</span></p>
+    </Ls>
+  </LegalPage>
+);
+
 const COMMUNITY_SEED = [];
 
 const AVATAR_COLORS = ["#29a8ff","#e91ea7","#c8a96e","#7c6aff","#3ecf8e","#ff6b6b"];
@@ -8925,7 +9034,7 @@ const CourseCheckout = ({ course, onBack, onPurchaseComplete, currentTier = "45"
                 {agreed && <IC n="check" s={9} c={C.accent} />}
               </div>
               <span style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.7 }}>
-                I agree to the <span style={{ color: C.accent, cursor: "pointer" }}>Terms of Service</span> and confirm this is a one-time, non-refundable purchase for lifetime digital course access.
+                I agree to the <span style={{ color: C.accent, cursor: "pointer", textDecoration: "underline" }} onClick={() => window.open("https://app.fortitude.trade/?page=terms","_blank")}>Terms of Service</span> and confirm this is a one-time, non-refundable purchase for lifetime digital course access.
               </span>
             </label>
 
@@ -9380,7 +9489,10 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
               {agreedTrial && <IC n="check" s={9} c={C.accent} />}
             </div>
             <span style={{ fontSize: 11, color: C.textMuted, lineHeight: 1.7 }}>
-              I authorise a charge of <strong style={{ color: C.text }}>${price}/month</strong> ({trialStep.billing === "annual" ? "billed annually" : "billed monthly"}) and understand I can cancel anytime.
+              I authorise a charge of <strong style={{ color: C.text }}>${price}/month</strong> ({trialStep.billing === "annual" ? "billed annually" : "billed monthly"}) and understand I can cancel anytime. By subscribing I agree to the{" "}
+              <span onClick={e => { e.stopPropagation(); setPage("terms"); }} style={{ color: C.accent, cursor: "pointer", textDecoration: "underline" }}>Terms of Service</span>
+              {" "}and{" "}
+              <span onClick={e => { e.stopPropagation(); setPage("privacy"); }} style={{ color: C.accent, cursor: "pointer", textDecoration: "underline" }}>Privacy Policy</span>.
             </span>
           </label>
           <button className="btn bp" style={{ width: "100%", padding: 14, fontSize: 13, opacity: (trialCardValid && agreedTrial && !trialProcessing) ? 1 : 0.4 }} onClick={handleStartTrial} disabled={!trialCardValid || !agreedTrial || trialProcessing}>
@@ -9594,8 +9706,19 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
       {/* Fine print */}
       <div style={{ padding:"14px 18px", background:"rgba(13,16,24,.6)", border:`1px solid ${C.border}`, borderRadius:6 }}>
         <div style={{ fontSize:12, color:C.textDim, lineHeight:1.9 }}>
-          All subscriptions include a 7-day free trial — card details required at signup, charged automatically after trial ends. Monthly plans bill on the same date each month. Annual plans are billed in full at a 20% discount. Downgrade takes effect at end of billing period — no data deleted. Course purchases require an active subscription; if your subscription lapses, course content is preserved in read-only mode and resumes on reactivation. Cancel anytime from your Account page.
+          Monthly plans bill on the same date each month. Annual plans are billed in full at a 20% discount. Downgrade takes effect at end of billing period — no data deleted. Course purchases require an active subscription; if your subscription lapses, course content is preserved in read-only mode and resumes on reactivation. Cancel anytime from your Account page.
         </div>
+      </div>
+
+      {/* Legal footer */}
+      <div style={{ display:"flex", justifyContent:"center", gap:20, marginTop:20 }}>
+        {[{label:"Terms of Service",page:"terms"},{label:"Privacy Policy",page:"privacy"},{label:"Refund Policy",page:"refunds"}].map(l => (
+          <span key={l.page} onClick={() => setPage(l.page)} style={{ fontSize:11, color:C.textDim, cursor:"pointer", textDecoration:"underline" }}
+            onMouseEnter={e => e.target.style.color = C.accent}
+            onMouseLeave={e => e.target.style.color = C.textDim}>
+            {l.label}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -11438,6 +11561,9 @@ export default function App() {
     affiliate:   AffiliateLanding,
     quant:       QuantResearchAnalyst,
     admin:       Admin,
+    terms:       (props) => <TermsOfService {...props} />,
+    privacy:     (props) => <PrivacyPolicy {...props} />,
+    refunds:     (props) => <RefundPolicy {...props} />,
   };
 
   // ── Access enforcement per spec ──────────────────────────────────────────────
@@ -11448,7 +11574,7 @@ export default function App() {
   // 4. Expired/cancelled subscription — premium features frozen (read-only where data exists)
   // 5. Never delete user data on downgrade
   // 6. Account + pricing + education always accessible
-  const ALWAYS_OPEN = new Set(["account","pricing","education"]);
+  const ALWAYS_OPEN = new Set(["account","pricing","education","terms","privacy","refunds"]);
 
   const renderPage = () => {
     // Admin is gated to admin role (production: server-side role check)
