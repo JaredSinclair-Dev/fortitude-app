@@ -573,11 +573,6 @@ const Login = ({ onLogin }) => {
 
   const handleLogin = async () => {
     if (!email || !pass) { setError("Please enter your email and password."); return; }
-    // Demo bypass for preview/testing
-    if (email.toLowerCase() === "fort" && pass === "Fort") {
-      onLogin({ token: "demo-token", user: { id:"demo", email:"demo@fortitude.trade", first_name:"Fortitude", last_name:"Demo", membership_tier:"elite_95", subscription_status:"active", role:"admin" } });
-      return;
-    }
     setError(""); setLoading(true);
     try {
       const data = await api.post("/auth/login", { email, password: pass });
