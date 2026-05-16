@@ -11434,6 +11434,12 @@ export default function App() {
     }
   }, []);
 
+  // PostHog: track page views on every navigation
+  useEffect(() => {
+    const ph = window.__posthog;
+    if (ph) ph.capture('$pageview', { page, tier, authed });
+  }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fetch trades for behavioral/cognitive engines whenever token changes
   useEffect(() => {
     if (!token) { setEngineTrades([]); return; }
@@ -11458,6 +11464,9 @@ export default function App() {
 
   const handleLogin = ({ token: t, user }) => {
     setToken(t); setUser(user); setAuthed(true);
+    // PostHog: identify user on login
+    const ph = window.__posthog;
+    if (ph && user?.id) ph.identify(String(user.id), { tier: mapTier(user.membership_tier), email: user.email });
     // Show onboarding modal once per account
     const key = `fis_onboarded_${user?.id || ""}`;
     if (!localStorage.getItem(key)) {
