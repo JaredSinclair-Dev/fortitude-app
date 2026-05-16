@@ -3415,6 +3415,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                 <div style={{width:6,height:6,borderRadius:"50%",background:"#29a8ff",boxShadow:"0 0 5px #29a8ff"}}/>
                 <div className="sl" style={{margin:0,color:"#29a8ff"}}>Open Positions</div>
               </div>
+              <div className="mob-table-wrap">
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
                   {["Instrument","Direction","Entry","Size","Session","Duration"].map(h=>(
@@ -3434,6 +3435,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                   ))}
                 </tbody>
               </table>
+              </div>{/* /mob-table-wrap */}
             </div>
           )}
         </div>
@@ -3532,6 +3534,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                 <IC n="cal" s={13} c={C.accent}/>
                 <div className="sl" style={{margin:0}}>Monthly P&L</div>
               </div>
+              <div className="mob-table-wrap">
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
                   {["Month","Trades","Win Rate","Net P&L"].map(h=>(
@@ -3549,6 +3552,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                   ))}
                 </tbody>
               </table>
+              </div>{/* /mob-table-wrap */}
             </div>
           )}
           </>)}
@@ -3683,6 +3687,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                 <div className="sl" style={{margin:0}}>{new Date(selectedDay.iso+"T12:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
                 <span style={{marginLeft:"auto",fontSize:12,fontWeight:600,color:selectedDay.pnl>0?C.accent:selectedDay.pnl<0?C.pink:C.text,fontFamily:"JetBrains Mono,monospace"}}>{selectedDay.pnl>0?"+":""}{selectedDay.pnl.toFixed(2)}</span>
               </div>
+              <div className="mob-table-wrap">
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
                   {["Instrument","Direction","Entry","Exit","Lots","Session","Duration","Net P&L"].map(h=>(
@@ -3704,6 +3709,7 @@ const Journal = ({ setPage, currentTier, user }) => {
                   ))}
                 </tbody>
               </table>
+              </div>{/* /mob-table-wrap */}
             </div>
           )}
         </div>
@@ -9410,7 +9416,7 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
         </div>
 
         {/* Payment method selector — two equal cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 24 }}>
+        <div className="checkout-paymethod" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 24 }}>
           {/* Card option */}
           <div onClick={() => { setPayMethod("card"); setCryptoErr(""); }}
             style={{ padding: "16px 18px", borderRadius: 10, border: `2px solid ${payMethod==="card" ? C.accent : C.border}`, background: payMethod==="card" ? `${C.accent}08` : C.surface, cursor: "pointer", transition: "all .15s" }}>
@@ -11744,6 +11750,31 @@ export default function App() {
 
           /* Pricing: hide comparison table */
           .pricing-compare{display:none!important}
+
+          /* Checkout — payment method selector stacks on very small screens */
+          .checkout-paymethod{grid-template-columns:1fr!important}
+
+          /* Checkout — full width on mobile */
+          .fi[style*="max-width: 660px"],.fi[style*="max-width:660px"]{padding:0!important}
+
+          /* Admin tables */
+          .admin-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+          /* Behavioral engine — score cards */
+          .behavior-score-row{flex-direction:column!important;gap:8px!important}
+
+          /* Broker sync card — action row */
+          .broker-sync-actions{flex-wrap:wrap!important;gap:8px!important}
+
+          /* Affiliate code display — break long codes */
+          .aff-code{word-break:break-all!important;font-size:11px!important}
+
+          /* Page section titles — smaller on mobile */
+          h1.df{font-size:22px!important}
+          h2.df{font-size:18px!important}
+
+          /* Reduce hero padding */
+          .fi{padding:0!important}
         }
 
         /* ── Always-on mobile chrome styles ──────────────────────── */
