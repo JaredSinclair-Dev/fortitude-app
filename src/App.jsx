@@ -3277,6 +3277,8 @@ const Journal = ({ setPage, currentTier, user }) => {
         if(formMode==="add") setTrades(prev=>[saved,...prev]);
         else { setTrades(prev=>prev.map(t=>t.id===editId?saved:t)); if(detailTrade?.id===editId) setDetailTrade(saved); }
         setFormOpen(false);
+        // Trigger PDI recompute in background after any trade change
+        api.post("/journal/pdi/compute", {}, token).catch(() => {});
       } else setFormErr(data.error?.message||"Failed to save trade.");
     } catch { setFormErr("Unable to connect. Please try again."); }
     finally { setFormSaving(false); }
