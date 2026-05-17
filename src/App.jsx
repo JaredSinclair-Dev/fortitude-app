@@ -4503,7 +4503,9 @@ const Coach = () => {
       while(apiMsgs.length && apiMsgs[0].role==="assistant") apiMsgs.shift();
       const data = await api.post("/ai/chat", { model:"claude-sonnet-4-20250514", max_tokens:1500, type:"coach", system:COACH_PROMPT, messages:apiMsgs }, token);
       const reply = data?.data?.content?.find(b=>b.type==="text")?.text
-        || (data?.error?.message ? `Error: ${data.error.message}` : null)
+        || (data?.error?.code === "AI_UNAVAILABLE" ? "AI coaching is temporarily unavailable while we resolve a platform issue. Please try again in a few minutes." : null)
+        || (data?.error?.code === "AI_NOT_CONFIGURED" ? "AI features are not yet active on this platform." : null)
+        || (data?.error?.message && !data.error.message.includes("Anthropic") ? `Error: ${data.error.message}` : null)
         || "Session processing error. Please retry.";
       setMessages(p=>[...p,{r:"a",t:reply}]);
     } catch { setMessages(p=>[...p,{r:"a",t:"Connection error. Please check your network and try again."}]); }
@@ -9745,6 +9747,10 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
   const [expLevel,  setExpLevel]  = useState(user?.experience_level || "");
   const [riskProf,  setRiskProf]  = useState(user?.risk_profile     || "");
 
+  // AI usage real-time data
+  const [aiUsageData, setAiUsageData] = useState(null);
+  const [aiUsageLoading, setAiUsageLoading] = useState(false);
+
   // Security tab state
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNew,     setPwNew]     = useState("");
@@ -9792,6 +9798,18 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
   };
   const [tab, setTab] = useState("subscription");
   const tier = TIERS[currentTier];
+
+  // Fetch real AI usage whenever the usage tab is opened
+  useEffect(() => {
+    if (tab !== "usage") return;
+    const token = localStorage.getItem("fis_token");
+    if (!token) return;
+    setAiUsageLoading(true);
+    api.get("/account/ai-usage", token)
+      .then(d => { if (d.success) setAiUsageData(d.data); })
+      .catch(()=>{})
+      .finally(()=>setAiUsageLoading(false));
+  }, [tab]);
 
   return (
     <div className="fi">
@@ -9929,14 +9947,62 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
 
       {tab==="usage" && (
         <div className="fi">
-          <div className="session-grid" style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:18 }}>
-            {[{l:"Chart Analyses Today",v:`${aiUsed}/${AI_CAPS[currentTier]>=999?"∞":AI_CAPS[currentTier]}`,c:C.accent},{l:"Coach Sessions",v:"3 this month",c:C.accent},{l:"Journal Imports",v:currentTier==="65"||currentTier==="95"?"Unlimited":"N/A",c:C.textMuted}].map(m=>(
-              <div key={m.l} className="mc" style={{ textAlign:"center" }}>
-                <div className="sl" style={{ textAlign:"center" }}>{m.l}</div>
-                <div className="mn" style={{ fontSize:20,color:m.c }}>{m.v}</div>
+          {/* Live usage stats */}
+          {aiUsageLoading ? (
+            <div style={{ color:C.textDim,fontSize:13,padding:"20px 0" }}>Loading usage data…</div>
+          ) : (
+            <>
+              <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:18 }}>
+                {[
+                  { l:"AI Calls Today",     v: aiUsageData ? `${aiUsageData.today}/${AI_CAPS[currentTier]>=999?"∞":AI_CAPS[currentTier]}` : `${aiUsed}/${AI_CAPS[currentTier]>=999?"∞":AI_CAPS[currentTier]}`, c:C.accent },
+                  { l:"This Month",         v: aiUsageData ? `${aiUsageData.thisMonth}` : "—",  c:C.accent },
+                  { l:"Journal Imports",    v: currentTier==="65"||currentTier==="95"?"Unlimited":"N/A", c:C.textMuted },
+                ].map(m=>(
+                  <div key={m.l} className="mc" style={{ textAlign:"center" }}>
+                    <div className="sl" style={{ textAlign:"center" }}>{m.l}</div>
+                    <div className="mn" style={{ fontSize:22,color:m.c }}>{m.v}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+
+              {/* Usage by type breakdown */}
+              {aiUsageData?.byType?.length > 0 && (
+                <div className="mc" style={{ marginBottom:14 }}>
+                  <div className="sl">Usage by Type — Last 30 Days</div>
+                  {aiUsageData.byType.map(r => {
+                    const maxCount = Math.max(...aiUsageData.byType.map(x=>x.count));
+                    const typeLabel = { coach:"Coach",journal:"Journal AI",chart:"Chart Analysis",market_query:"Market Intelligence" }[r.type] || r.type;
+                    return (
+                      <div key={r.type} style={{ display:"flex",alignItems:"center",gap:10,marginBottom:8 }}>
+                        <span style={{ fontSize:12,color:C.textMuted,width:150,flexShrink:0 }}>{typeLabel}</span>
+                        <div style={{ flex:1,height:5,borderRadius:3,background:C.border,overflow:"hidden" }}>
+                          <div style={{ width:`${(r.count/maxCount)*100}%`,height:"100%",borderRadius:3,background:C.accent,transition:"width .8s ease" }}/>
+                        </div>
+                        <span className="mn" style={{ fontSize:11,color:C.accent,width:32,textAlign:"right" }}>{r.count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 14-day daily sparkline */}
+              {aiUsageData?.daily?.length > 0 && (() => {
+                const max = Math.max(...aiUsageData.daily.map(d=>d.count), 1);
+                return (
+                  <div className="mc" style={{ marginBottom:14 }}>
+                    <div className="sl">Daily Activity — Last 14 Days</div>
+                    <div style={{ display:"flex",alignItems:"flex-end",gap:4,height:48 }}>
+                      {aiUsageData.daily.map((d,i)=>(
+                        <div key={i} title={`${d.date}: ${d.count} calls`} style={{ flex:1,background:d.count>0?C.accent:C.border,borderRadius:2,height:`${Math.max(4,(d.count/max)*100)}%`,opacity:d.count>0?.9:.3,transition:"height .4s ease",cursor:"default" }}/>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+
+          {/* Tier cap reference table */}
           <div className="sl">Daily AI Caps by Tier</div>
           <div className="mob-table-wrap" style={{ background:"rgba(13,16,24,.82)",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",backdropFilter:"blur(8px)" }}>
             <table>
@@ -11186,6 +11252,11 @@ const Admin = ({ setPage }) => {
   const [overrideMsg,   setOverrideMsg]   = useState("");
   const [overrideSaving,setOverrideSaving]= useState(false);
 
+  // AI usage monitor
+  const [aiUsageAdmin,        setAiUsageAdmin]        = useState(null);
+  const [aiUsageAdminLoading, setAiUsageAdminLoading] = useState(false);
+  const [aiUsageDays,         setAiUsageDays]         = useState(30);
+
   // $1 crypto test payment
   const [testPayLoading, setTestPayLoading] = useState(false);
   const [testPayMsg,     setTestPayMsg]     = useState("");
@@ -11216,6 +11287,16 @@ const Admin = ({ setPage }) => {
       if (usersRes.success) setUsers(usersRes.data.users || []);
     }).catch(()=>{}).finally(()=>setLoadingKPI(false));
   }, [token]);
+
+  // Fetch admin AI usage data
+  useEffect(() => {
+    if (!token) return;
+    setAiUsageAdminLoading(true);
+    api.get(`/admin/ai-usage?days=${aiUsageDays}`, token)
+      .then(d => { if (d.success) setAiUsageAdmin(d.data); })
+      .catch(()=>{})
+      .finally(()=>setAiUsageAdminLoading(false));
+  }, [token, aiUsageDays]);
 
   const tierDist = dash?.tier_distribution || [];
   const totalMembers = dash?.total_members || 0;
@@ -11313,6 +11394,115 @@ const Admin = ({ setPage }) => {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* ── AI Usage Monitor ───────────────────────────────────────────────── */}
+      <div className="mc" style={{ marginBottom:14 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap" }}>
+          <div className="sl" style={{ margin:0 }}>AI Usage Monitor</div>
+          <div style={{ marginLeft:"auto",display:"flex",gap:6 }}>
+            {[7,14,30].map(d=>(
+              <button key={d} className="btn bg" style={{ fontSize:10,padding:"4px 10px",borderColor:aiUsageDays===d?C.accent:C.border,color:aiUsageDays===d?C.accent:C.textMuted }} onClick={()=>setAiUsageDays(d)}>{d}d</button>
+            ))}
+          </div>
+        </div>
+
+        {aiUsageAdminLoading ? (
+          <div style={{ color:C.textDim,fontSize:12,padding:"8px 0" }}>Loading…</div>
+        ) : aiUsageAdmin ? (
+          <>
+            {/* Summary KPIs */}
+            <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:14 }}>
+              {[
+                { l:"Today",             v: aiUsageAdmin.today,                               c:C.accent },
+                { l:`${aiUsageDays}d Total`,  v: aiUsageAdmin.periodTotal,                   c:C.accent },
+                { l:"Unique Users",      v: aiUsageAdmin.uniqueUsers,                         c:C.accent },
+                { l:"Est. Cost USD",     v: `$${aiUsageAdmin.estimatedCostUsd.toFixed(2)}`,   c:C.gold   },
+              ].map(m=>(
+                <div key={m.l} style={{ background:"rgba(13,16,24,.6)",border:`1px solid ${C.border}`,borderRadius:6,padding:"10px 12px",textAlign:"center" }}>
+                  <div style={{ fontSize:10,color:C.textDim,letterSpacing:".08em",textTransform:"uppercase",marginBottom:4 }}>{m.l}</div>
+                  <div className="mn" style={{ fontSize:18,color:m.c }}>{m.v}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Daily sparkline */}
+            {aiUsageAdmin.daily?.length > 0 && (() => {
+              const max = Math.max(...aiUsageAdmin.daily.map(d=>d.count), 1);
+              return (
+                <div style={{ marginBottom:14 }}>
+                  <div style={{ fontSize:10,color:C.textDim,letterSpacing:".08em",textTransform:"uppercase",marginBottom:6 }}>Daily Calls — {aiUsageDays}d</div>
+                  <div style={{ display:"flex",alignItems:"flex-end",gap:3,height:44 }}>
+                    {aiUsageAdmin.daily.map((d,i)=>(
+                      <div key={i} title={`${d.date}: ${d.count}`} style={{ flex:1,background:d.count>0?C.accent:C.border,borderRadius:2,height:`${Math.max(4,(d.count/max)*100)}%`,opacity:d.count>0?.85:.25,cursor:"default" }}/>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12 }}>
+              {/* By type */}
+              {aiUsageAdmin.byType?.length > 0 && (
+                <div>
+                  <div style={{ fontSize:10,color:C.textDim,letterSpacing:".08em",textTransform:"uppercase",marginBottom:8 }}>Breakdown by Type</div>
+                  {aiUsageAdmin.byType.map(r => {
+                    const maxC = Math.max(...aiUsageAdmin.byType.map(x=>x.count));
+                    const typeLabel = { coach:"Coach",journal:"Journal AI",chart:"Chart Analysis",market_query:"Market Intel" }[r.type] || r.type;
+                    return (
+                      <div key={r.type} style={{ display:"flex",alignItems:"center",gap:8,marginBottom:7 }}>
+                        <span style={{ fontSize:11,color:C.textMuted,width:120,flexShrink:0 }}>{typeLabel}</span>
+                        <div style={{ flex:1,height:4,borderRadius:2,background:C.border,overflow:"hidden" }}>
+                          <div style={{ width:`${(r.count/maxC)*100}%`,height:"100%",background:C.accent,borderRadius:2 }}/>
+                        </div>
+                        <span className="mn" style={{ fontSize:10,color:C.accent,width:28,textAlign:"right" }}>{r.count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Token / cost detail */}
+              <div>
+                <div style={{ fontSize:10,color:C.textDim,letterSpacing:".08em",textTransform:"uppercase",marginBottom:8 }}>Token Consumption</div>
+                {[
+                  { l:"Input tokens",  v: (aiUsageAdmin.tokens?.input||0).toLocaleString(),  c:C.textMuted },
+                  { l:"Output tokens", v: (aiUsageAdmin.tokens?.output||0).toLocaleString(), c:C.textMuted },
+                  { l:"Est. cost",     v: `$${aiUsageAdmin.estimatedCostUsd.toFixed(4)}`,    c:C.gold },
+                  { l:"Rate (Sonnet)", v: "$3 / $15 per M tokens",                           c:C.textDim },
+                ].map(r=>(
+                  <div key={r.l} style={{ display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}` }}>
+                    <span style={{ fontSize:11,color:C.textMuted }}>{r.l}</span>
+                    <span className="mn" style={{ fontSize:11,color:r.c }}>{r.v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Top users */}
+            {aiUsageAdmin.topUsers?.length > 0 && (
+              <div style={{ marginTop:14 }}>
+                <div style={{ fontSize:10,color:C.textDim,letterSpacing:".08em",textTransform:"uppercase",marginBottom:8 }}>Top Users by Consumption ({aiUsageDays}d)</div>
+                <div className="mob-table-wrap" style={{ background:"rgba(0,0,0,.3)",borderRadius:6,overflow:"hidden" }}>
+                  <table>
+                    <thead><tr><th>Email</th><th>Tier</th><th>Calls</th></tr></thead>
+                    <tbody>
+                      {aiUsageAdmin.topUsers.map((u,i)=>(
+                        <tr key={i}>
+                          <td style={{ fontSize:11 }}>{u.email}</td>
+                          <td><span className="tg ta" style={{ fontSize:9 }}>{u.tier||"—"}</span></td>
+                          <td className="mn" style={{ fontSize:11,color:C.accent }}>{u.calls}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ color:C.textDim,fontSize:12 }}>No usage data yet — calls will appear here once users interact with AI features.</div>
+        )}
       </div>
 
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,marginBottom:14 }}>
