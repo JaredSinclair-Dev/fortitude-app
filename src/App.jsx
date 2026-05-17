@@ -4461,9 +4461,9 @@ const INIT_SESSIONS = [];
 
 
 const MODES = {
-  "post-loss": { label: "Post-Loss Debrief", color: C.pink, icon: "alert", desc: "Review consecutive losses, drawdown response, and risk deviation." },
+  "free":      { label: "New Conversation",  color: C.gold,  icon: "coach", desc: "Open session — address any discipline break, hesitation, or behavioral concern freely." },
+  "post-loss": { label: "Post-Loss Debrief", color: C.pink,  icon: "alert", desc: "Review consecutive losses, drawdown response, and risk deviation." },
   "weekly":    { label: "Weekly Review",     color: C.accent, icon: "chart", desc: "Structured review of prior week expectancy, consistency, and behavioral patterns." },
-  "free":      { label: "Free Reflection",   color: C.gold,  icon: "coach", desc: "Open session. Address any discipline break, hesitation, or behavioral concern." },
 };
 
 const OPENERS = {
@@ -4497,8 +4497,12 @@ const Coach = () => {
     setMessages(next); setInput(""); setLoading(true);
     try {
       const token = localStorage.getItem("fis_token");
-      const data = await api.post("/ai/chat", { model:"claude-sonnet-4-20250514", max_tokens:1000, type:"coach", system:COACH_PROMPT, messages:next.map(m=>({role:m.r==="a"?"assistant":"user",content:m.t})) }, token);
-      const reply = data.data?.content?.find(b=>b.type==="text")?.text||"Session processing error. Please retry.";
+      // Anthropic requires messages to start with role 'user' — strip any leading assistant
+      // messages (the coach opener is UI-only context; the system prompt sets the frame)
+      const apiMsgs = next.map(m=>({role:m.r==="a"?"assistant":"user",content:m.t}));
+      while(apiMsgs.length && apiMsgs[0].role==="assistant") apiMsgs.shift();
+      const data = await api.post("/ai/chat", { model:"claude-sonnet-4-20250514", max_tokens:1500, type:"coach", system:COACH_PROMPT, messages:apiMsgs }, token);
+      const reply = data?.data?.content?.find(b=>b.type==="text")?.text||"Session processing error. Please retry.";
       setMessages(p=>[...p,{r:"a",t:reply}]);
     } catch { setMessages(p=>[...p,{r:"a",t:"Connection error. Please check your network and try again."}]); }
     setLoading(false);
@@ -4554,9 +4558,12 @@ const Coach = () => {
   return (
     <div className="fi">
       <div style={{ marginBottom:24 }}>
-        <div style={{ display:"flex",alignItems:"baseline",gap:14,marginBottom:6 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:14,marginBottom:6,flexWrap:"wrap" }}>
           <h1 className="df" style={{fontFamily:"'Counter-Strike',sans-serif", fontSize:28,fontWeight:300 }}>Performance Coach</h1>
           <span style={{ fontSize:10,color:C.textDim,letterSpacing:".1em",textTransform:"uppercase" }}>Private · Structured · Analytical</span>
+          <button className="btn bp" style={{ marginLeft:"auto",fontSize:12,padding:"8px 18px",display:"flex",alignItems:"center",gap:7 }} onClick={()=>startSession("free")}>
+            <IC n="coach" s={12} c={C.bg}/>New Conversation
+          </button>
         </div>
         <p style={{ color:C.textMuted,fontSize:13,maxWidth:560 }}>An interactive performance calibration system. Not motivation. Not therapy. Structured accountability for discipline, risk consistency, and behavioral correction.</p>
       </div>
