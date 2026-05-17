@@ -4502,7 +4502,9 @@ const Coach = () => {
       const apiMsgs = next.map(m=>({role:m.r==="a"?"assistant":"user",content:m.t}));
       while(apiMsgs.length && apiMsgs[0].role==="assistant") apiMsgs.shift();
       const data = await api.post("/ai/chat", { model:"claude-sonnet-4-20250514", max_tokens:1500, type:"coach", system:COACH_PROMPT, messages:apiMsgs }, token);
-      const reply = data?.data?.content?.find(b=>b.type==="text")?.text||"Session processing error. Please retry.";
+      const reply = data?.data?.content?.find(b=>b.type==="text")?.text
+        || (data?.error?.message ? `Error: ${data.error.message}` : null)
+        || "Session processing error. Please retry.";
       setMessages(p=>[...p,{r:"a",t:reply}]);
     } catch { setMessages(p=>[...p,{r:"a",t:"Connection error. Please check your network and try again."}]); }
     setLoading(false);
