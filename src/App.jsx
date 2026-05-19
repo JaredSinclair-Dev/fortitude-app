@@ -4073,7 +4073,7 @@ const CognitiveIntelligence = ({ setPage, engineTrades = [] }) => {
       )}
 
       {/* Tone + PDI strip */}
-      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:18 }}>
+      <div className="cog-metrics-strip" style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:18 }}>
         <div className="mc" style={{ borderColor:tone.color,background:`${tone.color}08`,padding:16 }}>
           <div className="sl">Adaptive Coaching Tone</div>
           <div style={{ fontSize:16,fontWeight:600,color:tone.color,marginBottom:4 }}>{tone.label}</div>
@@ -4144,7 +4144,7 @@ const CognitiveIntelligence = ({ setPage, engineTrades = [] }) => {
           ))}
 
           {/* Always show the 4 bias categories as status cards */}
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginTop:4 }}>
+          <div className="cog-bias-grid" style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginTop:4 }}>
             {["Overconfidence","Loss Aversion","Confirmation","Recency"].map(b => {
               const ids = {Overconfidence:"overconfidence","Loss Aversion":"lossaversion",Confirmation:"confirmation",Recency:"recency"};
               const active = biasFlags.find(f=>f.id===ids[b]);
@@ -4772,7 +4772,7 @@ const CognitiveDashboard = ({ pdi, fatigue, biasFlags, commitment, trades, sessi
         <div className="sl" style={{ margin:0 }}>Cognitive Metrics Panel</div>
         <button className="btn bg" style={{ fontSize:11,padding:"5px 12px" }} onClick={()=>setPage("behavioral")}>Full Engine →</button>
       </div>
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:12 }}>
+      <div className="cog-5col" style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:12 }}>
         {[
           { l:"Discipline Index",    v:pdi,              unit:"/100", c:pdi>=70?C.accent:pdi>=55?C.gold:C.pink },
           { l:"Fatigue Index",       v:fatigue.score,    unit:"/100", c:fatigue.color },
@@ -10252,7 +10252,7 @@ function generateCode(name) {
 }
 
 const AffiliatePortal = ({ currentTier, setPage }) => {
-  const BASE_URL = "https://fortitude-app.vercel.app/join";
+  const BASE_URL = "https://app.fortitude.trade";
   const token = localStorage.getItem("fis_token");
 
   const [code,         setCode]         = useState("");
@@ -10263,6 +10263,7 @@ const AffiliatePortal = ({ currentTier, setPage }) => {
   const [customInput,  setCustomInput]  = useState("");
   const [codeError,    setCodeError]    = useState("");
   const [codeSaving,   setCodeSaving]   = useState(false);
+  const [codeSaved,    setCodeSaved]    = useState(false);
   const [copiedCode,   setCopiedCode]   = useState(false);
   const [copiedUrl,    setCopiedUrl]    = useState(false);
   const [activeFilter, setActiveFilter] = useState("all");
@@ -10309,6 +10310,7 @@ const AffiliatePortal = ({ currentTier, setPage }) => {
       if (data.success) {
         setCode(data.data.referralCode || val.toUpperCase().replace(/\s+/g,"-"));
         setCustomInput("");
+        setCodeSaved(true);
       } else {
         setCodeError(data.error?.message || "Code unavailable.");
       }
@@ -10479,7 +10481,7 @@ const AffiliatePortal = ({ currentTier, setPage }) => {
               {[
                 { l:"Payout Method",  v:"Bank Transfer (SWIFT)" },
                 { l:"Minimum Payout", v:"$50.00" },
-                { l:"Next Payout",    v:"1 April 2026" },
+                { l:"Next Payout",    v: (() => { const d = new Date(); const n = new Date(d.getFullYear(), d.getMonth()+1, 1); return n.toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"}); })() },
                 { l:"Currency",       v:"USD" },
               ].map(r=>(
                 <div key={r.l} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:`1px solid ${C.border}` }}>
@@ -11010,9 +11012,9 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
       {/* ── Snapshot strip ─────────────────────────────────────────────────── */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:8, marginBottom:18 }}>
         {[
-          { icon:"feed", label:"Active Events",  value:SAMPLE_EVENTS.length,                                    color:C.accent },
-          { icon:"breaking", label:"Critical (9-10)", value:SAMPLE_EVENTS.filter(e=>e.impactScore>=9).length,        color:"#e91ea7" },
-          { icon:"alert", label:"High (7-8)",      value:SAMPLE_EVENTS.filter(e=>e.impactScore>=7&&e.impactScore<9).length, color:"#e91ea7" },
+          { icon:"feed", label:"Active Events",  value:EVENTS_DATA.length,                                    color:C.accent },
+          { icon:"breaking", label:"Critical (9-10)", value:EVENTS_DATA.filter(e=>e.impactScore>=9).length,        color:"#e91ea7" },
+          { icon:"alert", label:"High (7-8)",      value:EVENTS_DATA.filter(e=>e.impactScore>=7&&e.impactScore<9).length, color:"#e91ea7" },
           { icon:"narrative", label:"Narratives",      value:NARRATIVES.length,                                       color:C.accent },
         ].map(s => (
           <div key={s.label} style={{ textAlign:"center", padding:"12px 8px", background:"rgba(13,16,24,.7)", border:`1px solid rgba(255,255,255,.06)`, borderRadius:8 }}>
@@ -11100,7 +11102,7 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
                         {e.narratives.slice(0,2).map(n => <span key={n} style={{ fontSize:10, padding:"2px 7px", borderRadius:3, background:"rgba(41,168,255,.07)", color:C.accent, border:"1px solid rgba(41,168,255,.18)" }}>{n}</span>)}
                       </div>
                       <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                        <div style={{ padding:"2px 8px", borderRadius:3, background:regime.bg, fontSize:10, color:regime.color }}>{regime.icon} {regime.label}</div>
+                        <div style={{ padding:"2px 8px", borderRadius:3, background:regime.bg, fontSize:10, color:regime.color, display:"flex", alignItems:"center", gap:4 }}><IC n={regime.icon} s={10} c={regime.color}/>{regime.label}</div>
                         <span style={{ fontSize:10, color:C.textDim }}>{fmtTime(e.timestamp)}</span>
                       </div>
                     </div>
@@ -12134,6 +12136,11 @@ export default function App() {
 
           /* Behavioral engine — score cards */
           .behavior-score-row{grid-template-columns:1fr 1fr!important;gap:8px!important}
+
+          /* Cognitive intelligence — metric strips */
+          .cog-metrics-strip{grid-template-columns:1fr!important}
+          .cog-bias-grid{grid-template-columns:1fr 1fr!important;gap:6px!important}
+          .cog-5col{grid-template-columns:repeat(2,1fr)!important;gap:8px!important}
 
           /* Broker sync card — action row */
           .broker-sync-actions{flex-wrap:wrap!important;gap:8px!important}
