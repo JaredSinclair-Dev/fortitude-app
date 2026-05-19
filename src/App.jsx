@@ -179,6 +179,7 @@ const IC = ({ n, s = 16, c = "currentColor" }) => {
     globe:       <><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>,
     news:        <><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 0-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8V6z"/></>,
     broker:      <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></>,
+    credit:      <><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></>,
   };
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{p[n] || p.alert}</svg>;
 };
@@ -2343,9 +2344,9 @@ const Dashboard = ({ setPage, currentTier, user, engineTrades = [] }) => {
                 <span style={{ fontSize:11, fontWeight:600, color:C.text, letterSpacing:".06em", textTransform:"uppercase" }}>Economic Calendar</span>
               </div>
 
-              <a href="#" style={{ fontSize:11, color:C.accent, textDecoration:"none", display:"flex", alignItems:"center", gap:4 }}>
+              <span onClick={() => setPage("calendar")} style={{ fontSize:11, color:C.accent, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}>
                 Full view <IC n="external" s={11} c={C.accent}/>
-              </a>
+              </span>
             </div>
             <TVCalendarWidget height={700}/>
           </div>
@@ -2357,57 +2358,105 @@ const Dashboard = ({ setPage, currentTier, user, engineTrades = [] }) => {
 
 
 
-const Intelligence = () => {
+const Intelligence = ({ currentTier, aiUsed, setPage }) => {
   const [step, setStep] = useState("upload");
   const [asset, setAsset] = useState("forex");
   const [tf, setTf] = useState("H4");
   const [thesis, setThesis] = useState("");
   const [img, setImg] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const run = () => { if(!img) return; setAnalyzing(true); setTimeout(()=>{setAnalyzing(false);setStep("result");},2200); };
-  if(step==="result") return (
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [analysisError, setAnalysisError] = useState("");
+  const [localAiUsed, setLocalAiUsed] = useState(aiUsed || 0);
+
+  const cap = AI_CAPS[currentTier] ?? 0;
+  const atCap = cap !== 999 && localAiUsed >= cap;
+
+  const run = async () => {
+    if (!img || analyzing || atCap) return;
+    setAnalyzing(true); setAnalysisError("");
+    try {
+      const token = localStorage.getItem("fis_token");
+      const match = img.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) throw new Error("Invalid image format");
+      const mediaType = match[1];
+      const b64Data   = match[2];
+      const systemPrompt = `You are the Fortitude Market Framework (FMF) Analyst. Provide educational, institutional-grade structural analysis of financial charts. Analyse: (1) Market structure — HH/HL/LH/LL sequences and structural shifts; (2) Liquidity context — equal highs/lows, stop clusters, inducement; (3) Risk architecture — logical invalidation, volatility state; (4) Scenario mapping — primary and failure scenarios; (5) Behavioural discipline reminder. Output is strictly educational — never financial advice. Use clear section headers.`;
+      const messages = [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: b64Data } },
+          { type: "text", text: `Asset Class: ${asset}\nTimeframe: ${tf}${thesis ? `\nTrader Thesis: ${thesis}` : ""}\n\nApply the Fortitude Market Framework. Provide the five sections: (1) Market Structure Assessment, (2) Liquidity & Order Flow Context, (3) Risk Architecture Consideration, (4) Scenario Mapping, (5) Behavioural Discipline Reminder.` }
+        ]
+      }];
+      const data = await api.post("/ai/chat", { model:"claude-sonnet-4-20250514", max_tokens:1200, type:"intelligence", system:systemPrompt, messages }, token);
+      const text = data?.data?.content?.find(b => b.type === "text")?.text;
+      if (text) {
+        setAnalysisResult(text);
+        setLocalAiUsed(p => p + 1);
+        setStep("result");
+      } else if (data?.error?.code === "AI_UNAVAILABLE") {
+        setAnalysisError("AI analysis is temporarily unavailable. Please try again shortly.");
+      } else if (data?.error?.code === "AI_NOT_CONFIGURED") {
+        setAnalysisError("AI features are being configured — check back soon.");
+      } else {
+        setAnalysisError(data?.error?.message || "Analysis failed — please try again.");
+      }
+    } catch { setAnalysisError("Connection error. Please check your network and try again."); }
+    setAnalyzing(false);
+  };
+
+  if (step === "result") return (
     <div className="fi">
       <div style={{ display:"flex",alignItems:"center",gap:12,marginBottom:20 }}>
-        <button className="btn bg" style={{ padding:"7px 14px" }} onClick={()=>setStep("upload")}>← New Analysis</button>
+        <button className="btn bg" style={{ padding:"7px 14px" }} onClick={() => { setStep("upload"); setAnalysisResult(null); }}>← New Analysis</button>
         <div style={{ marginLeft:"auto",display:"flex",gap:8 }}>
-          <span className="tg ta">{asset.toUpperCase()}</span><span className="tg tb">{tf}</span>
+          <span className="tg ta">{asset.toUpperCase()}</span>
+          <span className="tg tb">{tf}</span>
         </div>
       </div>
-      {img&&<div style={{ marginBottom:20,borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`,maxHeight:200 }}><img src={img} alt="chart" style={{ width:"100%",maxHeight:200,objectFit:"cover",display:"block",opacity:.85 }}/></div>}
+      {img && <div style={{ marginBottom:20,borderRadius:8,overflow:"hidden",border:`1px solid ${C.border}`,maxHeight:200 }}><img src={img} alt="chart" style={{ width:"100%",maxHeight:200,objectFit:"cover",display:"block",opacity:.85 }}/></div>}
       <div className="df" style={{fontFamily:"'Counter-Strike',sans-serif", fontSize:22,fontWeight:300,marginBottom:4 }}>Fortitude Market Framework Analysis</div>
       <p style={{ color:C.textDim,fontSize:12,marginBottom:20 }}>Generated {new Date().toLocaleString()} — Educational interpretation only</p>
       <hr className="dv"/>
-      {[{t:"Market Structure Assessment",c:C.accent,b:"Current structural bias presents as transitional. Price action has demonstrated a sequence of lower highs since the most recent swing high, however a prior higher low remains intact on the selected timeframe. This creates structural ambiguity that should not be resolved through assumption. A confirmed break above the most recent lower high would shift bias toward bullish continuation."},{t:"Liquidity & Order Flow Context",c:C.accent,b:"Equal lows are present at the base of the most recent consolidation range, representing a probable stop cluster for long positions initiated at that level. Inducement behavior is visible on the immediate left side of current price — a shallow push designed to trigger premature directional entries."},{t:"Risk Architecture Consideration",c:C.gold,b:"Logical invalidation resides below the most recent structural low. Volatility context is compressive — expansion has not been confirmed. This environment does not favor directional commitment. Asymmetric risk definition is possible only if structure confirms at the referenced invalidation boundary."},{t:"Scenario Mapping",c:C.accent,b:"Primary Scenario: Structural continuation requires a break above the most recent lower high with closing price confirmation.\n\nSecondary Scenario: Failure case involves continuation below the equal lows. Should that occur, the structural framework shifts to bearish continuation."},{t:"Behavioral Discipline Reminder",c:C.textMuted,b:"Markets operate within probabilistic frameworks, not deterministic outcomes. The disciplined practitioner identifies structural conditions, defines risk parameters, and executes only when probability and asymmetry align."}].map((s,i)=>(
-        <div key={i} style={{ marginBottom:22 }}>
-          <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:10 }}>
-            <span style={{ width:3,height:18,background:s.c,borderRadius:2,display:"inline-block" }}/>
-            <span style={{ fontSize:10,fontWeight:600,letterSpacing:".1em",textTransform:"uppercase",color:s.c }}>{i+1}. {s.t}</span>
-          </div>
-          {s.b.split("\n\n").map((p,j)=><p key={j} style={{ color:C.textMuted,lineHeight:1.85,fontSize:13,paddingLeft:13,marginBottom:8 }}>{p}</p>)}
-        </div>
-      ))}
-      <div style={{ background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:16 }}>
+      <div style={{ color:C.textMuted,fontSize:13,lineHeight:1.85,whiteSpace:"pre-wrap" }}>{analysisResult}</div>
+      <div style={{ background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:16,marginTop:20 }}>
         <div style={{ display:"flex",gap:10 }}><IC n="alert" s={13} c={C.textDim}/><p style={{ color:C.textDim,fontSize:12,lineHeight:1.7 }}>This analysis is educational in nature and reflects structural interpretation, not financial advice. Markets are probabilistic. Risk management remains the user's responsibility.</p></div>
       </div>
     </div>
   );
+
   return (
     <div className="fi">
       <div style={{ marginBottom:28 }}>
         <h1 className="df" style={{fontFamily:"'Counter-Strike',sans-serif", fontSize:28,fontWeight:300,marginBottom:6 }}>Market Intelligence</h1>
         <p style={{ color:C.textMuted,fontSize:13 }}>Upload a chart for institutional-grade structural analysis using the Fortitude Market Framework.</p>
       </div>
+
+      {/* Quota meter */}
       <div className="mc" style={{ marginBottom:18,display:"flex",alignItems:"center",gap:16,padding:"12px 16px" }}>
         <IC n="shield" s={14} c={C.accent}/>
         <span style={{ fontSize:12,color:C.textMuted }}>Analysis quota:</span>
-        <div style={{ flex:1,maxWidth:200 }}><div className="pb"><div className="pf" style={{ width:"40%" }}/></div></div>
-        <span className="mn" style={{ fontSize:12,color:C.accent }}>2 / 5 today</span>
-        <span className="tg ta" style={{ marginLeft:"auto" }}>FMF Owner</span>
+        <div style={{ flex:1,maxWidth:200 }}>
+          <div className="pb"><div className="pf" style={{ width: cap >= 999 ? "100%" : `${Math.min(100,(localAiUsed/Math.max(cap,1))*100)}%` }}/></div>
+        </div>
+        <span className="mn" style={{ fontSize:12,color:atCap ? C.pink : C.accent }}>
+          {cap >= 999 ? "Unlimited" : `${localAiUsed} / ${cap} today`}
+        </span>
+        {atCap && <button className="btn bp" style={{ fontSize:10,padding:"4px 10px",marginLeft:"auto" }} onClick={() => setPage("pricing")}>Upgrade →</button>}
       </div>
-      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
+
+      {/* Error banner */}
+      {analysisError && (
+        <div style={{ padding:"10px 14px",borderRadius:6,background:"rgba(233,30,167,.06)",border:`1px solid ${C.pink}40`,marginBottom:14 }}>
+          <span style={{ fontSize:12,color:C.pink }}>{analysisError}</span>
+        </div>
+      )}
+
+      <div className="analyses-grid" style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:16 }}>
         <div>
           <div className="sl">Chart Upload</div>
-          <div onClick={()=>document.getElementById("fi").click()} style={{ border:`1px dashed ${C.borderHover}`,borderRadius:8,background:"rgba(17,21,32,.7)",backdropFilter:"blur(6px)",cursor:"pointer",transition:"all .2s",padding:img?0:48,textAlign:"center" }} onMouseEnter={e=>e.currentTarget.style.borderColor=C.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=C.borderHover}>
+          <div onClick={()=>document.getElementById("fi").click()} className="upload-zone" style={{ border:`1px dashed ${C.borderHover}`,borderRadius:8,background:"rgba(17,21,32,.7)",backdropFilter:"blur(6px)",cursor:"pointer",transition:"all .2s",padding:img?0:48,textAlign:"center" }} onMouseEnter={e=>e.currentTarget.style.borderColor=C.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=C.borderHover}>
             <input id="fi" type="file" accept="image/*" style={{ display:"none" }} onChange={e=>{const f=e.target.files[0];if(f){const r=new FileReader();r.onload=ev=>setImg(ev.target.result);r.readAsDataURL(f);}}}/>
             {img?(<div style={{ position:"relative" }}><img src={img} alt="chart" style={{ width:"100%",borderRadius:8,display:"block",maxHeight:260,objectFit:"cover" }}/><button className="btn bg" style={{ position:"absolute",top:8,right:8,padding:"4px 10px",fontSize:11 }} onClick={e=>{e.stopPropagation();setImg(null);}}>Remove</button></div>):(<><IC n="upload" s={22} c={C.textDim}/><div style={{ marginTop:10,color:C.textMuted,fontSize:13 }}>Drop chart image here</div><div style={{ marginTop:4,color:C.textDim,fontSize:11 }}>PNG · JPG · JPEG</div></>)}
           </div>
@@ -2418,7 +2467,7 @@ const Intelligence = () => {
             {[["Asset Class",<select className="inp" value={asset} onChange={e=>setAsset(e.target.value)}>{["forex","crypto","indices","commodities","equities"].map(o=><option key={o} value={o}>{o.charAt(0).toUpperCase()+o.slice(1)}</option>)}</select>],["Timeframe",<select className="inp" value={tf} onChange={e=>setTf(e.target.value)}>{["M1","M5","M15","M30","H1","H4","D1","W1","MN"].map(o=><option key={o}>{o}</option>)}</select>],["Optional Thesis",<textarea className="inp" value={thesis} onChange={e=>setThesis(e.target.value)} placeholder="Describe your structural observation..." style={{ resize:"vertical",minHeight:80 }}/>]].map(([label,el])=>(
               <div key={label}><label style={{ fontSize:10,color:C.textDim,display:"block",marginBottom:6,letterSpacing:".08em",textTransform:"uppercase" }}>{label}</label>{el}</div>
             ))}
-            <button className="btn bp" onClick={run} disabled={!img||analyzing} style={{ opacity:!img?.5:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8 }}>
+            <button className="btn bp" onClick={run} disabled={!img||analyzing||atCap} style={{ opacity:(!img||analyzing||atCap)?0.5:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8 }}>
               {analyzing?<><span className="pu" style={{ width:7,height:7,borderRadius:"50%",background:C.bg,display:"inline-block" }}/>Analysing...</>:<><IC n="intel" s={14} c={C.bg}/>Run FMF Analysis</>}
             </button>
           </div>
@@ -4909,7 +4958,7 @@ const BehavioralEngine = ({ setPage, engineTrades = [] }) => {
       </div>
 
       {/* 4 Score gauges */}
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18 }}>
+      <div className="behavior-score-row" style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18 }}>
         <div className="mc" style={{ textAlign:"center" }}>
           <ScoreGauge score={riskCons.score} label="Risk Consistency" sublabel={riskConsLabel(riskCons.score).label} color={riskConsLabel(riskCons.score).color}/>
           <hr className="dv"/>
@@ -5019,13 +5068,15 @@ const BehavioralEngine = ({ setPage, engineTrades = [] }) => {
   );
 };
 
-const Education = () => {
-  const [active, setActive] = useState(null);
-  // completedLessons: { [courseId]: Set<lessonId> }
+const Education = ({ currentTier, setPage }) => {
   const [completedLessons, setCompletedLessons] = useState({});
   const [progressLoaded, setProgressLoaded] = useState(false);
+  const [purchasedCourses, setPurchasedCourses] = useState(new Set());
+  // view: "library" | "course" | "lesson" | "checkout"
+  const [view, setView] = useState("library");
+  const [activeCourseId, setActiveCourseId] = useState(null);
+  const [activeLessonId, setActiveLessonId] = useState(null);
 
-  // Load progress from backend on mount
   useEffect(() => {
     const token = localStorage.getItem("fis_token");
     if (!token) { setProgressLoaded(true); return; }
@@ -5044,89 +5095,216 @@ const Education = () => {
   }, []);
 
   const markLessonComplete = async (courseId, lessonId) => {
-    // Optimistic update
     setCompletedLessons(prev => {
       const s = new Set(prev[courseId] || []);
       s.add(lessonId);
       return { ...prev, [courseId]: s };
     });
     const token = localStorage.getItem("fis_token");
-    if (token) {
-      api.post("/courses/progress/complete", { courseId, lessonId: String(lessonId) }, token).catch(() => {});
-    }
+    if (token) api.post("/courses/progress/complete", { courseId, lessonId: String(lessonId) }, token).catch(() => {});
   };
 
-  // Build display courses from COURSES data
-  const displayCourses = COURSE_DATA.filter(c => c.id !== "mentorship").map(c => {
+  const tierRank = { free: 0, "45": 1, "65": 2, "95": 3, lifetime: 3 };
+  const myRank = tierRank[currentTier] || 0;
+
+  const canAccess = (course) => {
+    if (course.tier === "free") return true;
+    if (course.tier === "mentorship") return false;
+    if (course.tier === "purchase") return purchasedCourses.has(course.id);
+    return myRank >= (tierRank[course.tier] || 0);
+  };
+
+  const goToLibrary = () => { setView("library"); window.scrollTo(0, 0); };
+  const goToCourse  = (id) => { setActiveCourseId(id); setView("course"); window.scrollTo(0, 0); };
+  const goToLesson  = (id) => { setActiveLessonId(id); setView("lesson"); window.scrollTo(0, 0); };
+
+  // ── Lesson view ────────────────────────────────────────────────────────────
+  if (view === "lesson" && activeCourseId && activeLessonId) {
+    const course = COURSE_DATA.find(c => c.id === activeCourseId);
+    if (!course) return null;
+    const allIds = course.sections.flatMap(s => s.lessonIds);
+    const idx = allIds.indexOf(activeLessonId);
+    return (
+      <LessonViewer
+        lessonId={activeLessonId}
+        course={course}
+        lessonDb={LESSON_DB}
+        completedIds={completedLessons[activeCourseId] || new Set()}
+        onBack={() => { setView("course"); window.scrollTo(0, 0); }}
+        onNext={() => idx < allIds.length - 1 && goToLesson(allIds[idx + 1])}
+        onPrev={() => idx > 0 && goToLesson(allIds[idx - 1])}
+        onComplete={() => markLessonComplete(activeCourseId, activeLessonId)}
+        hasNext={idx < allIds.length - 1}
+        hasPrev={idx > 0}
+        lessonIndex={idx}
+        totalLessons={allIds.length}
+      />
+    );
+  }
+
+  // ── Checkout view ──────────────────────────────────────────────────────────
+  if (view === "checkout" && activeCourseId) {
+    const course = COURSE_DATA.find(c => c.id === activeCourseId);
+    if (!course) return null;
+    return (
+      <CourseCheckout
+        course={course}
+        currentTier={currentTier}
+        onBack={() => goToCourse(activeCourseId)}
+        onUpgrade={() => setPage && setPage("pricing")}
+        onPurchaseComplete={() => {
+          setPurchasedCourses(prev => new Set([...prev, course.id]));
+          setView("course"); window.scrollTo(0, 0);
+        }}
+      />
+    );
+  }
+
+  // ── Course detail / mentorship view ───────────────────────────────────────
+  if (view === "course" && activeCourseId) {
+    const course = COURSE_DATA.find(c => c.id === activeCourseId);
+    if (!course) return null;
+
+    if (course.id === "mentorship") return <MentorshipApplication onBack={goToLibrary} />;
+
+    if (!canAccess(course)) {
+      if (course.tier === "purchase") {
+        if (myRank === 0) return <MembershipRequired course={course} onBack={goToLibrary} onGoToPricing={() => setPage && setPage("pricing")} />;
+        // Has subscription — go to checkout
+        return (
+          <CourseCheckout
+            course={course}
+            currentTier={currentTier}
+            onBack={goToLibrary}
+            onUpgrade={() => setPage && setPage("pricing")}
+            onPurchaseComplete={() => {
+              setPurchasedCourses(prev => new Set([...prev, course.id]));
+              setView("course"); window.scrollTo(0, 0);
+            }}
+          />
+        );
+      }
+      return <MembershipRequired course={course} onBack={goToLibrary} onGoToPricing={() => setPage && setPage("pricing")} />;
+    }
+
+    return (
+      <CourseDetail
+        course={course}
+        lessonDb={LESSON_DB}
+        completedIds={completedLessons[course.id] || new Set()}
+        onBack={goToLibrary}
+        onStartLesson={goToLesson}
+      />
+    );
+  }
+
+  // ── Library view ───────────────────────────────────────────────────────────
+  const allCourses = COURSE_DATA.map(c => {
     const allIds = c.sections.flatMap(s => s.lessonIds);
     const doneSet = completedLessons[c.id] || new Set();
     const done = allIds.filter(id => doneSet.has(id)).length;
     const total = allIds.length || c.totalLessons || 0;
-    return {
-      id: c.id, title: c.title, lessons: total, done,
-      pct: total ? Math.round((done / total) * 100) : 0,
-      tier: c.badge, tc: c.tier === "free" ? "tg2" : c.tier === "purchase" ? "ta" : "ta",
-      locked: false, sections: c.sections,
-    };
+    return { ...c, done, total, pct: total ? Math.round((done / total) * 100) : 0, accessible: canAccess(c) };
   });
 
-  const TITLES=["Introduction to Market Structure","Understanding Timeframes","Liquidity Theory Fundamentals","Order Flow Concepts","Structural Bias Identification","Entry Framework Architecture","Risk Definition Methodology","Session Mechanics","Inducement Recognition","Scenario Construction","Trade Management Framework","Review & Application"];
-  const activeCourse = displayCourses.find(c => c.id === active);
+  const freeCourses     = allCourses.filter(c => c.tier === "free");
+  const subCourses      = allCourses.filter(c => c.tier !== "free" && c.tier !== "purchase" && c.tier !== "mentorship");
+  const purchaseCourses = allCourses.filter(c => c.tier === "purchase");
+  const mentorship      = allCourses.find(c => c.tier === "mentorship");
+
+  const badgeSt = (badge) => {
+    const m = { FREE: [C.accent, `${C.accent}18`, `${C.accent}35`], CORE: [C.accent, `${C.accent}18`, `${C.accent}35`], PRO: [C.pink, `${C.pink}18`, `${C.pink}35`], WORKSHOP: [C.pink, `${C.pink}18`, `${C.pink}35`], MENTORSHIP: ["#d4af37", "rgba(212,175,55,.15)", "rgba(212,175,55,.35)"] };
+    return m[badge] || m.FREE;
+  };
+
+  const renderCard = (c) => {
+    const [bc, bg, br] = badgeSt(c.badge);
+    return (
+      <div key={c.id} className="mc" style={{ cursor: "pointer", transition: "border-color .15s, transform .15s", display: "flex", flexDirection: "column" }}
+        onClick={() => goToCourse(c.id)}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = c.accessible ? C.accentDim : C.border; e.currentTarget.style.transform = "translateY(-2px)"; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = ""; e.currentTarget.style.transform = ""; }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em", padding: "2px 8px", borderRadius: 3, background: bg, color: bc, border: `1px solid ${br}` }}>{c.badge}</span>
+          {!c.accessible && <IC n="lock" s={13} c={C.textDim} />}
+        </div>
+        {/* Title */}
+        <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 6, lineHeight: 1.4 }}>{c.title}</div>
+        {/* Description */}
+        <div style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.75, marginBottom: 12, flex: 1, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{c.description}</div>
+        {/* Meta row */}
+        <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+          {c.total > 0 && <span style={{ fontSize: 11, color: C.textDim }}><span className="mn" style={{ color: C.text, fontSize: 12 }}>{c.total}</span> lessons</span>}
+          <span style={{ fontSize: 11, color: C.textDim }}>{c.duration}</span>
+        </div>
+        {/* Progress or lock hint */}
+        {c.accessible && c.total > 0 ? (
+          <div>
+            <div className="pb" style={{ marginBottom: 4 }}><div className="pf" style={{ width: `${c.pct}%` }} /></div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.textDim }}>
+              <span>{c.done}/{c.total} complete</span><span>{c.pct}%</span>
+            </div>
+          </div>
+        ) : !c.accessible ? (
+          <div style={{ fontSize: 11, color: C.textDim, padding: "5px 10px", background: "rgba(255,255,255,.03)", borderRadius: 4, border: `1px solid ${C.border}`, textAlign: "center" }}>
+            {c.tier === "purchase" ? (myRank > 0 ? "One-time purchase — click to buy" : "Subscription required to purchase") : "Upgrade subscription to unlock"}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const Section = ({ title, courses }) => courses.length === 0 ? null : (
+    <div style={{ marginBottom: 36 }}>
+      <div className="sl">{title}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 14 }}>
+        {courses.map(renderCard)}
+      </div>
+    </div>
+  );
+
   return (
     <div className="fi">
-      <div style={{ marginBottom:28 }}>
-        <h1 className="df" style={{fontFamily:"'Counter-Strike',sans-serif", fontSize:28,fontWeight:300,marginBottom:6 }}>Education Framework</h1>
-        <p style={{ color:C.textMuted,fontSize:13 }}>Structured progression. Foundational to advanced market methodology.</p>
+      <div style={{ marginBottom: 32 }}>
+        <h1 className="df" style={{ fontFamily: "'Counter-Strike',sans-serif", fontSize: 28, fontWeight: 300, marginBottom: 6 }}>Education Framework</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>Structured progression. Foundational to advanced market methodology.</p>
       </div>
-      <div style={{ display:"grid",gridTemplateColumns:"1fr 2fr",gap:20 }}>
-        <div>
-          <div className="sl">Course Library</div>
-          {displayCourses.map(c=>(
-            <div key={c.id} className="mc" style={{ marginBottom:10,cursor:c.locked?"default":"pointer",opacity:c.locked?.55:1,borderColor:active===c.id?C.accentDim:undefined }} onClick={()=>!c.locked&&setActive(c.id===active?null:c.id)}>
-              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
-                <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                  {c.locked&&<IC n="lock" s={12} c={C.textDim}/>}
-                  <span style={{ fontSize:13,color:C.text }}>{c.title}</span>
+
+      <Section title="Free Courses" courses={freeCourses} />
+      <Section title="Subscription Courses" courses={subCourses} />
+      <Section title="Advanced Programmes — One-Time Purchase" courses={purchaseCourses} />
+
+      {mentorship && (
+        <div style={{ marginBottom: 36 }}>
+          <div className="sl">Elite Mentorship</div>
+          <div className="mc" style={{ background: "linear-gradient(135deg,rgba(13,16,24,.97),rgba(13,16,24,.82))", border: "1px solid rgba(212,175,55,.18)", cursor: "pointer", transition: "border-color .15s" }}
+            onClick={() => goToCourse("mentorship")}
+            onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(212,175,55,.4)"}
+            onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(212,175,55,.18)"}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 24, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em", padding: "2px 8px", borderRadius: 3, background: "rgba(212,175,55,.12)", color: "#d4af37", border: "1px solid rgba(212,175,55,.3)" }}>MENTORSHIP</span>
+                <h3 className="df" style={{ fontFamily: "'Counter-Strike',sans-serif", fontSize: 18, fontWeight: 300, color: C.text, margin: "10px 0 6px", letterSpacing: ".04em" }}>{mentorship.title}</h3>
+                <p style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.8, maxWidth: 520, marginBottom: 14 }}>{mentorship.description}</p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {mentorship.outcomes.slice(0, 3).map((o, i) => (
+                    <span key={i} style={{ fontSize: 11, color: C.textDim, padding: "3px 9px", borderRadius: 3, border: `1px solid ${C.border}` }}>{o}</span>
+                  ))}
                 </div>
-                <span className={`tg ${c.tc}`}>{c.tier}</span>
               </div>
-              <div className="pb" style={{ marginBottom:6 }}><div className="pf" style={{ width:`${c.pct}%` }}/></div>
-              <div style={{ display:"flex",justifyContent:"space-between",fontSize:11,color:C.textDim }}><span>{c.done}/{c.lessons} lessons</span><span>{c.pct}%</span></div>
-            </div>
-          ))}
-        </div>
-        <div>
-          {activeCourse?(
-            <div className="fi">
-              <div className="sl">{activeCourse.title} — Lesson Index</div>
-              <div style={{ background:"rgba(13,16,24,.82)",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",backdropFilter:"blur(8px)" }}>
-                {activeCourse.sections.flatMap(s=>s.lessonIds).map((lessonId,i)=>{
-                  const done=(completedLessons[activeCourse.id]||new Set()).has(lessonId);
-                  const lessonObj = LESSON_DB[lessonId];
-                  return (<div key={lessonId} style={{ display:"flex",alignItems:"center",gap:14,padding:"13px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer" }}
-                    onMouseEnter={e=>e.currentTarget.style.background=C.surfaceAlt}
-                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}
-                    onClick={()=>!done&&markLessonComplete(activeCourse.id, lessonId)}>
-                    <div style={{ width:24,height:24,borderRadius:"50%",background:done?C.accent:C.border,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-                      {done?<IC n="check" s={11} c={C.bg}/>:<span style={{ fontSize:10,color:C.textDim }}>{i+1}</span>}
-                    </div>
-                    <div style={{ flex:1,minWidth:0 }}>
-                      <div style={{ fontSize:13,color:done?C.text:C.textMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{lessonObj?.title||`Lesson ${i+1}`}</div>
-                      <div style={{ fontSize:11,color:C.textDim,marginTop:2 }}>{lessonObj?.type||"lesson"} · {lessonObj?.duration||"–"}</div>
-                    </div>
-                    {done?<span className="tg ta" style={{ marginLeft:"auto",flexShrink:0 }}>Complete</span>:<span style={{ fontSize:10,color:C.textDim,marginLeft:"auto",flexShrink:0 }}>Click to mark</span>}
-                  </div>);
-                })}
+              <div style={{ flexShrink: 0, textAlign: "right" }}>
+                <div className="mn" style={{ fontSize: 20, color: "#d4af37", fontWeight: 400, marginBottom: 2 }}>$2,995</div>
+                <div style={{ fontSize: 11, color: C.textDim, marginBottom: 14 }}>12 weeks · Private · Application Required</div>
+                <button className="btn bg" style={{ borderColor: "rgba(212,175,55,.35)", color: "#d4af37", padding: "9px 20px", fontSize: 11 }}
+                  onClick={e => { e.stopPropagation(); goToCourse("mentorship"); }}>
+                  Apply Now →
+                </button>
               </div>
             </div>
-          ):(
-            <div style={{ height:"100%",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",textAlign:"center",padding:40,background:"rgba(13,16,24,.82)",border:`1px solid ${C.border}`,borderRadius:8,backdropFilter:"blur(8px)" }}>
-              <IC n="edu" s={32} c={C.textDim}/>
-              <div style={{ color:C.textDim,fontSize:13,marginTop:16,lineHeight:1.8 }}>Select a course to view lesson index and track progression</div>
-            </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
@@ -9240,7 +9418,7 @@ const AIUsageMeter = ({ tier, used, setPage }) => {
 };
 
 // ── Pricing Page (standalone) ─────────────────────────────────────────────────
-const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) => {
+const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus, user }) => {
   const [billingAnnual, setBillingAnnual] = useState(true);
   const [trialStep, setTrialStep] = useState(null); // null | { tierId, billing }
   const [trialCard, setTrialCard] = useState({ name:"", num:"", exp:"", cvv:"" });
@@ -9427,7 +9605,7 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
           <div onClick={() => { setPayMethod("card"); setCryptoErr(""); }}
             style={{ padding: "16px 18px", borderRadius: 10, border: `2px solid ${payMethod==="card" ? C.accent : C.border}`, background: payMethod==="card" ? `${C.accent}08` : C.surface, cursor: "pointer", transition: "all .15s" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: payMethod==="card" ? `${C.accent}15` : "rgba(255,255,255,.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>💳</div>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: payMethod==="card" ? `${C.accent}15` : "rgba(255,255,255,.04)", display: "flex", alignItems: "center", justifyContent: "center" }}><IC n="credit" s={16} c={payMethod==="card" ? C.accent : C.textDim}/></div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: payMethod==="card" ? C.accent : C.text }}>Pay by Card</div>
                 <div style={{ fontSize: 10, color: C.textDim }}>Visa, Mastercard</div>
@@ -9444,7 +9622,7 @@ const Pricing = ({ currentTier, setPage, onUpgrade, subStatus, setSubStatus }) =
           <div onClick={() => { setPayMethod("crypto"); setCryptoErr(""); }}
             style={{ padding: "16px 18px", borderRadius: 10, border: `2px solid ${payMethod==="crypto" ? C.accent : C.border}`, background: payMethod==="crypto" ? `${C.accent}08` : C.surface, cursor: "pointer", transition: "all .15s" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: payMethod==="crypto" ? `${C.accent}15` : "rgba(255,255,255,.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>₿</div>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: payMethod==="crypto" ? `${C.accent}15` : "rgba(255,255,255,.04)", display: "flex", alignItems: "center", justifyContent: "center" }}><IC n="crypto" s={16} c={payMethod==="crypto" ? C.accent : C.textDim}/></div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: payMethod==="crypto" ? C.accent : C.text }}>Pay with Crypto</div>
                 <div style={{ fontSize: 10, color: C.textDim }}>BTC, ETH, USDT &amp; more</div>
@@ -11955,7 +12133,7 @@ export default function App() {
           .admin-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 
           /* Behavioral engine — score cards */
-          .behavior-score-row{flex-direction:column!important;gap:8px!important}
+          .behavior-score-row{grid-template-columns:1fr 1fr!important;gap:8px!important}
 
           /* Broker sync card — action row */
           .broker-sync-actions{flex-wrap:wrap!important;gap:8px!important}
