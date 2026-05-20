@@ -2098,7 +2098,9 @@ const OnboardingModal = ({ user, setPage, onClose }) => {
             </button>
           )}
         </div>
-        <button onClick={onClose} style={{ position:"absolute", top:16, right:16, background:"none", border:"none", cursor:"pointer", color:C.textDim, fontSize:18, lineHeight:1 }}>✕</button>
+        <button onClick={onClose} style={{ position:"absolute", top:16, right:16, background:"none", border:"none", cursor:"pointer", padding:4 }}>
+          <IC n="close" s={16} c={C.textDim}/>
+        </button>
       </div>
     </div>
   );
@@ -3854,7 +3856,7 @@ const Journal = ({ setPage, currentTier, user }) => {
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <button className="btn bg" style={{fontSize:11,padding:"6px 12px"}} onClick={()=>openEdit(detailTrade)}>Edit</button>
               <button className="btn bg" style={{fontSize:11,padding:"6px 12px",color:C.pink}} onClick={()=>{setDeleteId(detailTrade.id);setDetailTrade(null);}}>Delete</button>
-              <button className="btn bg" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setDetailTrade(null)}>✕</button>
+              <button className="btn bg" style={{padding:"6px 10px",display:"flex",alignItems:"center"}} onClick={()=>setDetailTrade(null)}><IC n="close" s={13} c={C.textMuted}/></button>
             </div>
           </div>
           <div style={{padding:"20px 22px"}}>
@@ -3906,7 +3908,7 @@ const Journal = ({ setPage, currentTier, user }) => {
           <div style={{background:"rgba(13,16,24,.98)",border:`1px solid ${C.border}`,borderRadius:10,padding:"24px 28px",width:"100%",maxWidth:580,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
               <h3 style={{fontSize:16,fontWeight:600,color:C.text,margin:0}}>{formMode==="add"?"Add Trade":"Edit Trade"}</h3>
-              <button className="btn bg" style={{fontSize:12,padding:"5px 10px"}} onClick={()=>setFormOpen(false)}>✕</button>
+              <button className="btn bg" style={{padding:"5px 10px",display:"flex",alignItems:"center"}} onClick={()=>setFormOpen(false)}><IC n="close" s={14} c={C.textMuted}/></button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               {[
@@ -8608,7 +8610,7 @@ const Community = () => {
                 <div style={{ fontSize:11, color:C.accent, fontWeight:600, marginBottom:2 }}>{replyTo.u}</div>
                 <div style={{ fontSize:11, color:C.textDim }}>{replyTo.text.slice(0,80)}…</div>
               </div>
-              <span onClick={() => setReplyTo(null)} style={{ fontSize:16, color:C.textDim, cursor:"pointer", padding:"0 4px" }}>✕</span>
+              <span onClick={() => setReplyTo(null)} style={{ cursor:"pointer", padding:"0 4px", display:"flex", alignItems:"center" }}><IC n="close" s={13} c={C.textDim}/></span>
             </div>
           )}
 
@@ -9448,7 +9450,7 @@ const GateWall = ({ feature, currentTier, setPage, readOnly = false, hasData = f
           <div style={{ fontSize:13,color:C.textMuted,lineHeight:2,maxWidth:400,marginBottom:6 }}>
             <span style={{ color:C.text }}>{label}</span> requires{" "}
             <span style={{ color:tierMeta.color,fontWeight:500 }}>{tierMeta.label} membership</span>
-            {` (${tierMeta.price}${tierMeta.billing})`} or above.
+            {tierMeta.monthly > 0 ? ` ($${tierMeta.monthly}/mo)` : ""}{" "}or above.
           </div>
           <div style={{ fontSize:12,color:C.textDim,marginBottom:24,maxWidth:360,lineHeight:1.8 }}>
             Upgrade to unlock this feature. All data accumulated on a higher tier is preserved if you downgrade.
@@ -10007,7 +10009,21 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
   const [pwMsg,     setPwMsg]     = useState("");
   const [pwSaving,  setPwSaving]  = useState(false);
 
+  // Email verification
+  const [verifyResending, setVerifyResending] = useState(false);
+  const [verifyMsg,       setVerifyMsg]       = useState("");
+
   const token = localStorage.getItem("fis_token");
+
+  const resendVerification = async () => {
+    setVerifyResending(true); setVerifyMsg("");
+    try {
+      const data = await api.post("/auth/resend-verification", {}, token);
+      if (data.success) setVerifyMsg("Verification email sent — check your inbox.");
+      else setVerifyMsg(data.error?.message || "Could not send email. Please try again.");
+    } catch { setVerifyMsg("Unable to connect."); }
+    finally { setVerifyResending(false); }
+  };
 
   const saveProfile = async () => {
     setProfileSaving(true); setProfileMsg("");
@@ -10080,13 +10096,33 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
         <div className="profile-strip-actions" style={{ marginLeft:"auto",display:"flex",gap:10,alignItems:"center" }}>
           <div style={{ textAlign:"right",marginRight:8 }}>
             <div style={{ fontSize:10,color:C.textDim,letterSpacing:".08em",textTransform:"uppercase" }}>Current Plan</div>
-            <div style={{ fontSize:13,fontWeight:600,color:tier.color }}>{tier.label} — {tier.price}{tier.billing}</div>
+            <div style={{ fontSize:13,fontWeight:600,color:tier.color }}>{tier.label}{tier.monthly > 0 ? ` — $${tier.monthly}/mo` : ""}</div>
           </div>
           <span className="tg" style={{ background:`${tier.color}18`,color:tier.color,border:`1px solid ${tier.color}40` }}>Active</span>
           <button className="btn bg" onClick={() => { setProfileEdit(!profileEdit); setProfileMsg(""); }}>{profileEdit ? "Cancel" : "Edit Profile"}</button>
           <button className="btn bg" style={{ display:"flex",alignItems:"center",gap:6 }} onClick={() => { if(window.__fortitudeLogout) window.__fortitudeLogout(); }}><IC n="logout" s={13}/>Sign Out</button>
         </div>
       </div>
+
+      {/* Email Verification Banner */}
+      {user?.email_verified === false && (
+        <div style={{ marginBottom:16, padding:"14px 18px", background:"rgba(212,175,55,.06)", border:"1px solid rgba(212,175,55,.25)", borderRadius:8, display:"flex", alignItems:"flex-start", gap:14 }}>
+          <IC n="alert" s={16} c={C.gold} style={{ flexShrink:0, marginTop:1 }}/>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:C.gold, marginBottom:3 }}>Email address not verified</div>
+            <div style={{ fontSize:12, color:C.textMuted, lineHeight:1.7, marginBottom:10 }}>
+              Verify your email to enable password recovery and important account notifications. Check your inbox for a link from <strong style={{ color:C.text }}>noreply@fortitude.trade</strong>.
+            </div>
+            {verifyMsg ? (
+              <div style={{ fontSize:12, color: verifyMsg.startsWith("Verification") ? C.accent : C.pink }}>{verifyMsg}</div>
+            ) : (
+              <button className="btn bg" style={{ fontSize:11, padding:"6px 14px", borderColor:"rgba(212,175,55,.35)", color:C.gold, opacity: verifyResending ? 0.6 : 1 }} onClick={resendVerification} disabled={verifyResending}>
+                {verifyResending ? "Sending…" : "Resend Verification Email"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Edit Profile Panel */}
       {profileEdit && (
@@ -10142,7 +10178,7 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
               <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
                 {[
                   {l:"Status",      v:subStatus==="active"?"Active":"Suspended", c:subStatus==="active"?C.accent:C.gold},
-                  {l:"Billing",     v:tier.billing||"One-time",                   c:C.text},
+                  {l:"Billing",     v:tier.monthly > 0 ? "Monthly or Annual" : "Free",  c:C.text},
                   {l:"AI Analyses", v:AI_CAPS[currentTier]>=999?"Unlimited":`${AI_CAPS[currentTier]}/day`, c:C.accent},
                   {l:"Next billing",v:"Managed via Stripe", c:C.textMuted},
                 ].map(r=>(
@@ -10171,7 +10207,7 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
                     <div style={{ width:7,height:7,borderRadius:"50%",background:t.color }}/>
                     <span style={{ fontSize:12,color:currentTier===t.id?t.color:C.textMuted,fontWeight:currentTier===t.id?600:400 }}>{t.label}</span>
                   </div>
-                  <span style={{ fontSize:11,color:t.color }}>{t.price}{t.billing}</span>
+                  <span style={{ fontSize:11,color:t.color }}>{t.monthly > 0 ? `$${t.monthly}/mo` : "Free"}</span>
                 </div>
               ))}
 
@@ -10259,14 +10295,22 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
               <thead><tr><th>Tier</th><th>Chart Analysis</th><th>Journal AI</th><th>Coach Messages</th><th>Caching</th></tr></thead>
               <tbody>
                 {[
-                  {t:"Free",          chart:"0",    journal:"—",       coach:"—",         cache:"N/A"},
-                  {t:"Fortitude",     chart:"5/day",journal:"—",       coach:"—",         cache:"Yes"},
-                  {t:"Fortitude Pro", chart:"10/day",journal:"Batch",  coach:"20/session",cache:"Yes"},
-                  {t:"Full Access",   chart:"∞ (fair-use)",journal:"∞",coach:"∞",          cache:"Yes"},
-                  {t:"Lifetime",      chart:"∞ (fair-use)",journal:"∞",coach:"∞",          cache:"Yes"},
-                ].map((r,i)=>(
-                  <tr key={i}><td style={{ fontWeight:currentTier===Object.keys(TIERS)[i]?600:400,color:Object.values(TIERS)[i].color }}>{r.t}</td><td className="mn" style={{ fontSize:12 }}>{r.chart}</td><td className="mn" style={{ fontSize:12 }}>{r.journal}</td><td className="mn" style={{ fontSize:12 }}>{r.coach}</td><td className="mn" style={{ fontSize:12,color:C.accent }}>{r.cache}</td></tr>
-                ))}
+                  {id:"free", chart:"0",             journal:"—",    coach:"—",          cache:"N/A"},
+                  {id:"45",   chart:"5 / day",        journal:"—",    coach:"—",          cache:"Yes"},
+                  {id:"65",   chart:"10 / day",       journal:"Batch",coach:"20 / session",cache:"Yes"},
+                  {id:"95",   chart:"∞ (fair-use)",   journal:"∞",    coach:"∞",          cache:"Yes"},
+                ].map(r => {
+                  const t = TIERS[r.id];
+                  return (
+                    <tr key={r.id}>
+                      <td style={{ fontWeight:currentTier===r.id?600:400, color:t?.color }}>{t?.label}</td>
+                      <td className="mn" style={{ fontSize:12 }}>{r.chart}</td>
+                      <td className="mn" style={{ fontSize:12 }}>{r.journal}</td>
+                      <td className="mn" style={{ fontSize:12 }}>{r.coach}</td>
+                      <td className="mn" style={{ fontSize:12, color:r.id==="free"?C.textDim:C.accent }}>{r.cache}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -10304,7 +10348,11 @@ const Account = ({ currentTier, setTier, setPage, aiUsed, subStatus, setSubStatu
                 </div>
               ))}
             </div>
-            <div style={{ marginTop:14 }}><button className="btn bg" style={{ borderColor:C.pinkDim,color:C.pink,fontSize:11 }}>Request Account Deletion</button></div>
+            <div style={{ marginTop:14 }}>
+              <a href={`mailto:support@fortitude.trade?subject=Account Deletion Request&body=Please delete my Fortitude account (${user?.email || ""}). I understand all data will be permanently removed after a 30-day grace period.`} className="btn bg" style={{ borderColor:C.pinkDim,color:C.pink,fontSize:11,display:"inline-flex",alignItems:"center",gap:6,textDecoration:"none" }}>
+                <IC n="close" s={11} c={C.pink}/> Request Account Deletion
+              </a>
+            </div>
           </div>
         </div>
       )}
@@ -10421,7 +10469,7 @@ const AffiliatePortal = ({ currentTier, setPage }) => {
           { l:"Total Earned",    v:`$${totalEarned.toFixed(2)}`,     c:C.accent, s:"Paid out" },
           { l:"Pending",         v:`$${pendingEarnings.toFixed(2)}`, c:C.accent, s:"Paid 30 days in arrears" },
           { l:"Active Referrals",v:activeCount,                       c:C.accent, s:`${trialCount} on trial` },
-          { l:"Conversion Rate", v:"71%",                             c:C.accent, s:"vs 58% platform avg" },
+          { l:"Conversion Rate", v: referrals.length > 0 ? `${Math.round((activeCount / referrals.length) * 100)}%` : "—", c:C.accent, s: referrals.length > 0 ? `${activeCount} of ${referrals.length} converted` : "No referrals yet" },
           { l:"Reward Rate",     v:"10–20%",                          c:C.accent,  s:"Per successful referral" },
         ].map(m=>(
           <div key={m.l} className="mc" style={{ textAlign:"center", padding:"14px 10px" }}>
@@ -11581,6 +11629,32 @@ const Admin = ({ setPage }) => {
   const [mentorUpdating,    setMentorUpdating]    = useState({});
   const [mentorNotes,       setMentorNotes]       = useState({});
 
+  // System action buttons
+  const [oseLoading,    setOseLoading]    = useState(false);
+  const [oseMsg,        setOseMsg]        = useState("");
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportMsg,     setReportMsg]     = useState("");
+
+  const runOseCompute = async () => {
+    setOseLoading(true); setOseMsg("");
+    try {
+      const d = await api.post("/admin/ose/compute-all", {}, token);
+      if (d.success) setOseMsg(`Done — ${d.data?.computed || "all"} users recomputed.`);
+      else setOseMsg(d.error?.message || "Failed.");
+    } catch { setOseMsg("Unable to connect."); }
+    finally { setOseLoading(false); }
+  };
+
+  const runDailyReport = async () => {
+    setReportLoading(true); setReportMsg("");
+    try {
+      const d = await api.post("/admin/reports/generate-daily", {}, token);
+      if (d.success) setReportMsg("Daily report generated.");
+      else setReportMsg(d.error?.message || "Failed.");
+    } catch { setReportMsg("Unable to connect."); }
+    finally { setReportLoading(false); }
+  };
+
   // $1 crypto test payment
   const [testPayLoading, setTestPayLoading] = useState(false);
   const [testPayMsg,     setTestPayMsg]     = useState("");
@@ -11932,6 +12006,32 @@ const Admin = ({ setPage }) => {
             onClick={handleTestCryptoPayment} disabled={testPayLoading}>
             {testPayLoading ? "Creating invoice…" : "Test $1 Payment →"}
           </button>
+        </div>
+      </div>
+
+      {/* ── System Actions ────────────────────────────────────────────────────── */}
+      <div className="mc" style={{ marginBottom:14 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:14 }}>
+          <IC n="refresh" s={14} c={C.accent}/>
+          <div className="sl" style={{ margin:0,color:C.text }}>System Actions</div>
+        </div>
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12 }}>
+          <div style={{ padding:"14px 16px",background:"rgba(13,16,24,.6)",border:`1px solid ${C.border}`,borderRadius:8 }}>
+            <div style={{ fontSize:12,fontWeight:600,color:C.text,marginBottom:4 }}>Recompute Churn Scores</div>
+            <div style={{ fontSize:11,color:C.textMuted,lineHeight:1.7,marginBottom:12 }}>Recalculate OSE engagement scores and churn risk levels for all active users. Runs automatically every 24h but can be triggered manually.</div>
+            {oseMsg && <div style={{ fontSize:11,color:oseMsg.includes("Done")?C.accent:C.pink,marginBottom:8 }}>{oseMsg}</div>}
+            <button className="btn bg" style={{ fontSize:11,padding:"7px 14px",opacity:oseLoading?.6:1 }} disabled={oseLoading} onClick={runOseCompute}>
+              {oseLoading ? "Computing…" : "Run Now →"}
+            </button>
+          </div>
+          <div style={{ padding:"14px 16px",background:"rgba(13,16,24,.6)",border:`1px solid ${C.border}`,borderRadius:8 }}>
+            <div style={{ fontSize:12,fontWeight:600,color:C.text,marginBottom:4 }}>Generate Daily Report</div>
+            <div style={{ fontSize:11,color:C.textMuted,lineHeight:1.7,marginBottom:12 }}>Compile today's platform KPIs, churn alerts, and event summary into a stored daily report. Useful for ad-hoc snapshots outside the scheduled run.</div>
+            {reportMsg && <div style={{ fontSize:11,color:reportMsg.includes("generated")?C.accent:C.pink,marginBottom:8 }}>{reportMsg}</div>}
+            <button className="btn bg" style={{ fontSize:11,padding:"7px 14px",opacity:reportLoading?.6:1 }} disabled={reportLoading} onClick={runDailyReport}>
+              {reportLoading ? "Generating…" : "Generate →"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -12610,7 +12710,7 @@ export default function App() {
                     <div style={{ fontSize:8,color:C.text,letterSpacing:".14em",textTransform:"uppercase",marginTop:1 }}>Performance Operating System</div>
                   </div>
                 </div>
-                <div onClick={()=>setMobNavOpen(false)} style={{ color:C.textDim,fontSize:18,cursor:"pointer",padding:4,lineHeight:1 }}>✕</div>
+                <div onClick={()=>setMobNavOpen(false)} style={{ cursor:"pointer",padding:4,display:"flex",alignItems:"center" }}><IC n="close" s={18} c={C.textDim}/></div>
               </div>
               <nav style={{ flex:1,display:"flex",flexDirection:"column",gap:0 }}>
                 {NAV_GROUPS.map((group,gi) => {
