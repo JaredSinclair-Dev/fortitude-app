@@ -3520,7 +3520,7 @@ const Journal = ({ setPage, currentTier, user }) => {
           {/* Hourly heatmap */}
           <div className="mc" style={{padding:"16px 20px"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-              <IC n="clock" s={13} c={C.accent}/>
+              <IC n="watch" s={13} c={C.accent}/>
               <div className="sl" style={{margin:0}}>Trade Activity by Hour (UTC)</div>
             </div>
             <div className="chart-scroll"><div style={{display:"grid",gridTemplateColumns:"repeat(24,1fr)",gap:3,minWidth:480}}>
@@ -4521,7 +4521,7 @@ const OPENERS = {
   "free": "Session open. What would you like to address today? You can begin with a specific event, a pattern you have noticed, or a behavioral concern. Be as direct as you prefer.",
 };
 
-const Coach = () => {
+const Coach = ({ engineTrades = [], user }) => {
   const [view, setView] = useState("home");
   const [mode, setMode] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -4532,7 +4532,60 @@ const Coach = () => {
   const endRef = useRef(null);
   useEffect(()=>{ endRef.current?.scrollIntoView({behavior:"smooth"}); },[messages,loading]);
 
-  const startSession = m => { setMode(m); setReadOnly(false); setMessages([{r:"a",t:OPENERS[m]}]); setView("session"); };
+  // ── Real behavioral data from journal ───────────────────────────────────────
+  const revenge      = computeRevengeScore(engineTrades);
+  const riskCons     = computeRiskConsistency(engineTrades);
+  const overtrading  = computeOvertradingScore(engineTrades);
+  const equity       = computeEquityStability([]);
+  const pdi          = computePDI(riskCons.score, revenge.score, overtrading.score, equity.score);
+  const hasTrades    = engineTrades.length > 0;
+
+  // Consecutive-loss streak (most recent trades first)
+  const recentLossStreak = (() => {
+    const sorted = [...engineTrades].sort((a,b) => new Date(b.time||0) - new Date(a.time||0));
+    let streak = 0;
+    for (const t of sorted) { if (!t.win) streak++; else break; }
+    return streak;
+  })();
+
+  // R-expectancy from tagged trades
+  const tagged = engineTrades.filter(t => t.result != null && t.result !== 0);
+  const expectancy = tagged.length > 0
+    ? (tagged.reduce((a,t) => a + t.result, 0) / tagged.length).toFixed(2)
+    : null;
+
+  // Max drawdown from equity run
+  const maxDD = (() => {
+    if (!hasTrades) return null;
+    const sorted = [...engineTrades].sort((a,b) => new Date(a.time||0) - new Date(b.time||0));
+    let peak=0, dd=0, run=0;
+    sorted.forEach(t => { run += t.profit||0; if(run>peak) peak=run; if(peak-run>dd) dd=peak-run; });
+    return dd > 0 ? dd.toFixed(2) : null;
+  })();
+
+  // Late-session trades (18:00+ UTC) as a % of total
+  const lateSessionCount = engineTrades.filter(t => t.time && new Date(t.time).getUTCHours() >= 18).length;
+  const lateSessionRatio = hasTrades ? lateSessionCount / engineTrades.length : 0;
+
+  // Dynamic opener for weekly — uses real 7-day stats
+  const getOpener = (m) => {
+    if (m === "weekly" && hasTrades) {
+      const now = Date.now();
+      const t7d = engineTrades.filter(t => t.time && (now - new Date(t.time)) < 7*24*3600*1000);
+      const w7d = t7d.filter(t => t.win).length;
+      const wr7d = t7d.length > 0 ? Math.round((w7d/t7d.length)*100) : null;
+      const tagged7d = t7d.filter(t => t.result != null && t.result !== 0);
+      const exp7d = tagged7d.length > 0 ? (tagged7d.reduce((a,t)=>a+t.result,0)/tagged7d.length).toFixed(2) : null;
+      if (t7d.length > 0) {
+        return `Weekly performance review initiated. Your data for the prior seven days shows ${t7d.length} trade${t7d.length!==1?"s":""}${wr7d!==null?` with a ${wr7d}% win rate`:""}${exp7d!==null?` and an expectancy of ${parseFloat(exp7d)>=0?"+":""}${exp7d}R`:""}. Risk consistency scored ${riskCons.score} out of 100. Before I provide observations — what do you feel went well this week, and what felt inconsistent?`;
+      }
+    }
+    return OPENERS[m];
+  };
+
+  const userInitial = user?.first_name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || "Y";
+
+  const startSession = m => { setMode(m); setReadOnly(false); setMessages([{r:"a",t:getOpener(m)}]); setView("session"); };
   const openSaved = s => { setMode(s.mode); setMessages(s.msgs); setReadOnly(true); setView("session"); };
   const endSession = () => {
     if(!readOnly&&messages.length>1) setSessions(p=>[{id:Date.now(),mode,date:new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}),title:MODES[mode]?.label,preview:messages[1]?.t?.slice(0,85)+"...",msgs:[...messages]},...p]);
@@ -4581,7 +4634,7 @@ const Coach = () => {
                 {m.r==="a"&&<div style={{ fontSize:9,color:C.accentDim,letterSpacing:".1em",textTransform:"uppercase",marginBottom:7,fontWeight:600 }}>Performance Coach</div>}
                 <p style={{ fontSize:13,color:m.r==="a"?C.text:C.accent,lineHeight:1.8,whiteSpace:"pre-wrap" }}>{m.t}</p>
               </div>
-              {m.r==="u"&&<div style={{fontFamily:"'Counter-Strike',sans-serif", width:28,height:28,borderRadius:"50%",background:C.accentGlow,border:`1px solid ${C.accentDim}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2 }}><span className="df" style={{ fontSize:12,color:C.accent }}>J</span></div>}
+              {m.r==="u"&&<div style={{fontFamily:"'Counter-Strike',sans-serif", width:28,height:28,borderRadius:"50%",background:C.accentGlow,border:`1px solid ${C.accentDim}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2 }}><span className="df" style={{ fontSize:12,color:C.accent }}>{userInitial}</span></div>}
             </div>
           ))}
           {loading&&(
@@ -4620,11 +4673,20 @@ const Coach = () => {
         </div>
         <p style={{ color:C.textMuted,fontSize:13,maxWidth:560 }}>An interactive performance calibration system. Not motivation. Not therapy. Structured accountability for discipline, risk consistency, and behavioral correction.</p>
       </div>
-      <div style={{ background:"rgba(233,30,167,.06)",border:`1px solid ${C.pinkDim}`,borderRadius:8,padding:"13px 18px",marginBottom:20,display:"flex",alignItems:"center",gap:14 }}>
-        <span className="pu" style={{ width:6,height:6,borderRadius:"50%",background:C.pink,display:"inline-block",flexShrink:0 }}/>
-        <div style={{ flex:1 }}><span style={{ fontSize:13,color:C.text }}>Journal detected 2 consecutive losses this week. </span><span style={{ fontSize:13,color:C.textMuted }}>A structured post-loss debrief may be appropriate.</span></div>
-        <button className="btn bg" style={{ fontSize:11,borderColor:C.pinkDim,color:C.pink,flexShrink:0 }} onClick={()=>startSession("post-loss")}>Initiate Debrief</button>
-      </div>
+      {recentLossStreak >= 2 && (
+        <div style={{ background:"rgba(233,30,167,.06)",border:`1px solid ${C.pinkDim}`,borderRadius:8,padding:"13px 18px",marginBottom:20,display:"flex",alignItems:"center",gap:14 }}>
+          <span className="pu" style={{ width:6,height:6,borderRadius:"50%",background:C.pink,display:"inline-block",flexShrink:0 }}/>
+          <div style={{ flex:1 }}><span style={{ fontSize:13,color:C.text }}>Journal detected {recentLossStreak} consecutive loss{recentLossStreak!==1?"es":""}. </span><span style={{ fontSize:13,color:C.textMuted }}>A structured post-loss debrief may be appropriate.</span></div>
+          <button className="btn bg" style={{ fontSize:11,borderColor:C.pinkDim,color:C.pink,flexShrink:0 }} onClick={()=>startSession("post-loss")}>Initiate Debrief</button>
+        </div>
+      )}
+      {pdi < 55 && recentLossStreak < 2 && hasTrades && (
+        <div style={{ background:"rgba(233,30,167,.06)",border:`1px solid ${C.pinkDim}`,borderRadius:8,padding:"13px 18px",marginBottom:20,display:"flex",alignItems:"center",gap:14 }}>
+          <IC n="alert" s={14} c={C.pink}/>
+          <div style={{ flex:1 }}><span style={{ fontSize:13,color:C.text }}>Discipline Index below threshold ({pdi}/100). </span><span style={{ fontSize:13,color:C.textMuted }}>A structured review is recommended before further exposure.</span></div>
+          <button className="btn bg" style={{ fontSize:11,borderColor:C.pinkDim,color:C.pink,flexShrink:0 }} onClick={()=>startSession("weekly")}>Begin Review</button>
+        </div>
+      )}
       <div style={{ display:"grid",gridTemplateColumns:"1.4fr 1fr",gap:18,marginBottom:20 }}>
         <div>
           <div className="sl">Initiate Session</div>
@@ -4644,7 +4706,12 @@ const Coach = () => {
         <div>
           <div className="sl">Behavioral Flags</div>
           <div className="mc" style={{ marginBottom:12 }}>
-            {[{l:"Revenge cluster",s:"Clear",c:C.accent},{l:"Late-session (18:00+)",s:"Monitor",c:C.gold},{l:"Size consistency",s:"Moderate",c:C.gold},{l:"Post-loss frequency",s:"Elevated",c:C.pink}].map(f=>(
+            {[
+              { l:"Revenge cluster",      s: hasTrades ? (revenge.score<=25?"Clear":revenge.score<=60?"Monitor":"Elevated") : "—", c: hasTrades ? (revenge.score<=25?C.accent:revenge.score<=60?C.gold:C.pink) : C.textDim },
+              { l:"Late-session (18:00+)",s: hasTrades ? (lateSessionRatio<0.1?"Clear":lateSessionRatio<0.25?"Monitor":"Elevated") : "—", c: hasTrades ? (lateSessionRatio<0.1?C.accent:lateSessionRatio<0.25?C.gold:C.pink) : C.textDim },
+              { l:"Size consistency",     s: hasTrades ? (riskCons.score>=70?"Consistent":riskCons.score>=50?"Moderate":"Inconsistent") : "—", c: hasTrades ? (riskCons.score>=70?C.accent:riskCons.score>=50?C.gold:C.pink) : C.textDim },
+              { l:"Post-loss frequency",  s: hasTrades ? (revenge.flags?.rapidReentry>0?"Active":revenge.score<=25?"Low":"Elevated") : "—", c: hasTrades ? (revenge.flags?.rapidReentry>0?C.pink:revenge.score<=25?C.accent:C.gold) : C.textDim },
+            ].map(f=>(
               <div key={f.l} style={{ display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${C.border}` }}>
                 <span style={{ fontSize:12,color:C.textMuted }}>{f.l}</span>
                 <span style={{ fontSize:11,color:f.c,fontWeight:500 }}>{f.s}</span>
@@ -4652,12 +4719,17 @@ const Coach = () => {
             ))}
           </div>
           <div className="mc">
-            {[{l:"Expectancy",v:"+0.31R"},{l:"Risk consistency",v:"72 / 100"},{l:"Max drawdown",v:"−6.2%"}].map(m=>(
+            {[
+              { l:"Expectancy",       v: expectancy!==null ? `${parseFloat(expectancy)>=0?"+":""}${expectancy}R` : hasTrades ? "No R-data" : "—" },
+              { l:"Risk consistency", v: hasTrades ? `${riskCons.score} / 100` : "—" },
+              { l:"Max drawdown",     v: maxDD!==null ? `−$${maxDD}` : "—" },
+            ].map(m=>(
               <div key={m.l} style={{ display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${C.border}` }}>
                 <span style={{ fontSize:12,color:C.textMuted }}>{m.l}</span>
-                <span className="mn" style={{ fontSize:12,color:C.accent }}>{m.v}</span>
+                <span className="mn" style={{ fontSize:12,color:m.v==="—"||m.v==="No R-data"?C.textDim:C.accent }}>{m.v}</span>
               </div>
             ))}
+            {!hasTrades && <div style={{ fontSize:11,color:C.textDim,padding:"6px 0",lineHeight:1.6 }}>Log trades in your journal to populate behavioral metrics.</div>}
           </div>
         </div>
       </div>
@@ -5022,7 +5094,7 @@ const BehavioralEngine = ({ setPage, engineTrades = [] }) => {
       {/* Revenge detail breakdown */}
       <div className="mc" style={{ marginBottom:18 }}>
         <div className="sl">Revenge Trading Decomposition</div>
-        <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14 }}>
+        <div className="be-revenge-grid" style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14 }}>
           {[
             { label:"Size Escalation", weight:"×30", val:Math.round(revenge.flags.sizeEscalation*30), color:revenge.flags.sizeEscalation>0?C.pink:C.accent, desc:"Position size >1.5x average after loss" },
             { label:"Frequency Spike", weight:"×30", val:Math.round(revenge.flags.freqSpike*30),      color:revenge.flags.freqSpike>0?C.pink:C.accent,      desc:"Trade count 2x average in 2h post-loss window" },
@@ -10951,13 +11023,16 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
         </div>
         <div style={{ position:"relative" }}>
           <div style={{ filter:"blur(5px)", pointerEvents:"none", opacity:.4 }}>
-            {SAMPLE_EVENTS.slice(0,2).map(e => (
+            {[
+              { id:"p1", category:"Monetary Policy",  headline:"Federal Reserve signals higher-for-longer rate path as inflation data surprises to the upside",              impactScore:9, source:"Reuters", ts:"Live" },
+              { id:"p2", category:"Geopolitical Conflict", headline:"Escalation in key oil transit corridor triggers risk-off positioning across commodity markets", impactScore:8, source:"Bloomberg", ts:"Live" },
+            ].map(e => (
               <div key={e.id} className="mc" style={{ marginBottom:10, padding:"16px 18px" }}>
                 <div style={{ display:"flex", gap:12, alignItems:"center" }}>
-                  <span style={{ fontSize:22 }}><CatIcon cat={e.category} s={18} c={C.textMuted}/></span>
+                  <CatIcon cat={e.category} s={18} c={C.textMuted}/>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:500, color:C.text, marginBottom:3 }}>{e.headline}</div>
-                    <div style={{ fontSize:11, color:C.textDim }}>{e.sources[0]} · {fmtTime(e.timestamp)}</div>
+                    <div style={{ fontSize:11, color:C.textDim }}>{e.source} · {e.ts}</div>
                   </div>
                   <ScoreRing score={e.impactScore} size={40}/>
                 </div>
@@ -11057,6 +11132,26 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
 
             {/* Event cards */}
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {loadingFeed && (
+                <div style={{ padding:"32px", textAlign:"center", color:C.textDim, fontSize:12, display:"flex", flexDirection:"column", alignItems:"center", gap:10 }}>
+                  <div style={{ display:"flex", gap:5 }}>{[0,1,2].map(i=><div key={i} style={{ width:6, height:6, borderRadius:"50%", background:C.accent, opacity:.6, animation:`pu 1.2s ease ${i*0.2}s infinite` }}/>)}</div>
+                  Fetching live macro intelligence…
+                </div>
+              )}
+              {!loadingFeed && filtered.length === 0 && (
+                <div style={{ padding:"36px 24px", textAlign:"center", background:"rgba(13,16,24,.7)", border:`1px solid ${C.border}`, borderRadius:10 }}>
+                  <div style={{ marginBottom:12, display:"flex", justifyContent:"center" }}><IC n="feed" s={28} c={C.textDim}/></div>
+                  <div style={{ fontSize:14, color:C.textMuted, marginBottom:8, fontWeight:500 }}>
+                    {EVENTS_DATA.length === 0 ? "No events loaded" : "No events match this filter"}
+                  </div>
+                  <div style={{ fontSize:12, color:C.textDim, lineHeight:1.8, maxWidth:340, margin:"0 auto", marginBottom:16 }}>
+                    {EVENTS_DATA.length === 0
+                      ? "Click the button below to fetch the latest macro events from global sources."
+                      : "Try lowering the impact threshold or selecting a different category."}
+                  </div>
+                  {EVENTS_DATA.length === 0 && <button className="btn bp" style={{ fontSize:12, padding:"8px 20px" }} onClick={fetchLiveData} disabled={loadingFeed}>Load Intelligence Feed</button>}
+                </div>
+              )}
               {filtered.map(e => {
                 const regime = REGIME_META[e.regime] || REGIME_META["Risk-Off"];
                 const isActive = activeEvent?.id === e.id;
@@ -11281,6 +11376,16 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
       {activeTab === "narratives" && (
         <div>
           <div style={{ fontSize:11, color:C.textDim, marginBottom:14 }}>Dominant macro narratives and their trajectory · Updated as events develop</div>
+          {NARRATIVES.length === 0 && (
+            <div style={{ padding:"36px 28px", textAlign:"center", background:"rgba(13,16,24,.7)", border:`1px solid ${C.border}`, borderRadius:10 }}>
+              <div style={{ marginBottom:14, display:"flex", justifyContent:"center" }}><IC n="narrative" s={32} c={C.textDim}/></div>
+              <div style={{ fontSize:14, color:C.textMuted, marginBottom:8, fontWeight:500 }}>No narratives loaded yet</div>
+              <div style={{ fontSize:12, color:C.textDim, lineHeight:1.8, maxWidth:360, margin:"0 auto" }}>
+                Narratives are extracted automatically from the live intelligence feed. Load the Feed tab to fetch current macro events — narratives will populate here once data is available.
+              </div>
+              <button className="btn bg" style={{ fontSize:12, padding:"8px 18px", marginTop:18 }} onClick={() => setActiveTab("feed")}>Go to Feed →</button>
+            </div>
+          )}
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {NARRATIVES.sort((a,b) => b.strength - a.strength).map(n => {
               const trendCol = n.trend==="Building"?C.accent:n.trend==="Peaking"?C.gold:"#7a8fa8";
@@ -11319,32 +11424,46 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
       ══════════════════════════════════════════════════════════════════ */}
       {activeTab === "reports" && (
         <div>
-          {[
-            { icon:"morning", title:"Morning Macro Brief", time:"07:00 GMT · Today", type:"Daily", color:C.accent,
-              preview:"Fed minutes dominate the macro landscape. USD well-supported across the board. Gold under pressure from higher real rates. Key watch: CPI next week and PCE end of month.", tags:["Monetary Policy","USD","Gold"] },
-            { icon:"feed", title:"Intraday Update",     time:"13:30 GMT · Today", type:"Intraday", color:"#e91ea7",
-              preview:"Red Sea tensions escalating — oil risk premium building fast. Shipping cost indices spiking. Watch for inflation secondary effects on ECB timeline.", tags:["Geopolitical","Oil","Inflation"] },
-            { icon:"weekly", title:"Weekly Narrative Report — W12", time:"Friday · This Week", type:"Weekly", color:"#d4af37",
-              preview:"BOJ pivot risk, sticky inflation, and geopolitical premium are the dominant themes. Gold net positive on the week. USD complex — hawkish Fed vs global risk-off creating crosscurrents.", tags:["Weekly","All Assets","Macro"] },
-          ].map(r => (
-            <div key={r.title} style={{ background:"rgba(13,16,24,.85)", border:`1px solid rgba(255,255,255,.06)`, borderRadius:10, padding:"18px 20px", marginBottom:10 }}>
-              <div style={{ display:"flex", gap:14, alignItems:"flex-start" }}>
-                <div style={{ width:44, height:44, borderRadius:9, background:`${r.color}12`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0, alignItems:"center", justifyContent:"center" }}><IC n={r.icon} s={22} c={r.color}/></div>
-                <div style={{ flex:1 }}>
-                  <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:6, flexWrap:"wrap" }}>
-                    <span style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:`${r.color}15`, color:r.color, border:`1px solid ${r.color}35` }}>{r.type}</span>
-                    <span style={{ fontSize:11, color:C.textDim }}>{r.time}</span>
-                  </div>
-                  <div style={{ fontSize:14, fontWeight:500, color:C.text, marginBottom:6 }}>{r.title}</div>
-                  <div style={{ fontSize:12, color:C.textMuted, lineHeight:1.7, marginBottom:10 }}>{r.preview}</div>
-                  <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
-                    {r.tags.map(t => <span key={t} style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:"rgba(255,255,255,.04)", color:C.textDim, border:"1px solid rgba(255,255,255,.06)" }}>{t}</span>)}
+          {EVENTS_DATA.length === 0 ? (
+            <div style={{ padding:"40px 28px", textAlign:"center", background:"rgba(13,16,24,.7)", border:`1px solid ${C.border}`, borderRadius:10 }}>
+              <div style={{ marginBottom:14, display:"flex", justifyContent:"center" }}><IC n="report" s={32} c={C.textDim}/></div>
+              <div style={{ fontSize:14, color:C.textMuted, marginBottom:8, fontWeight:500 }}>No reports generated yet</div>
+              <div style={{ fontSize:12, color:C.textDim, lineHeight:1.8, maxWidth:400, margin:"0 auto" }}>
+                Macro briefings are generated from the live intelligence feed. Load current events in the Feed tab — your Morning Brief and Weekly Report will appear here once the feed is populated.
+              </div>
+              <button className="btn bg" style={{ fontSize:12, padding:"8px 18px", marginTop:18 }} onClick={() => { setActiveTab("feed"); fetchLiveData(); }}>Load Live Feed →</button>
+            </div>
+          ) : (
+            <>
+              {[
+                { icon:"morning", title:"Morning Macro Brief", time:`07:00 GMT · ${new Date().toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}`, type:"Daily", color:C.accent,
+                  preview: EVENTS_DATA.slice(0,2).map(e=>e.summary).join(" ") || "No summary available.", tags: [...new Set(EVENTS_DATA.slice(0,3).map(e=>e.category))].slice(0,3) },
+                { icon:"weekly", title:`Weekly Narrative Report`, time:`Week of ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}`, type:"Weekly", color:"#d4af37",
+                  preview: EVENTS_DATA.slice(0,3).map(e=>e.headline).join(" · ") || "No events loaded.", tags: [...new Set(EVENTS_DATA.map(e=>e.regime))].slice(0,3) },
+              ].map(r => (
+                <div key={r.title} style={{ background:"rgba(13,16,24,.85)", border:`1px solid rgba(255,255,255,.06)`, borderRadius:10, padding:"18px 20px", marginBottom:10 }}>
+                  <div style={{ display:"flex", gap:14, alignItems:"flex-start" }}>
+                    <div style={{ width:44, height:44, borderRadius:9, background:`${r.color}12`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}><IC n={r.icon} s={22} c={r.color}/></div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:6, flexWrap:"wrap" }}>
+                        <span style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:`${r.color}15`, color:r.color, border:`1px solid ${r.color}35` }}>{r.type}</span>
+                        <span style={{ fontSize:11, color:C.textDim }}>{r.time}</span>
+                        <span style={{ fontSize:10, padding:"2px 6px", borderRadius:3, background:"rgba(41,168,255,.08)", color:C.accent, border:`1px solid ${C.accentDim}` }}>Live data</span>
+                      </div>
+                      <div style={{ fontSize:14, fontWeight:500, color:C.text, marginBottom:6 }}>{r.title}</div>
+                      <div style={{ fontSize:12, color:C.textMuted, lineHeight:1.7, marginBottom:10 }}>{r.preview}</div>
+                      <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+                        {r.tags.map(t => <span key={t} style={{ fontSize:10, padding:"2px 8px", borderRadius:3, background:"rgba(255,255,255,.04)", color:C.textDim, border:"1px solid rgba(255,255,255,.06)" }}>{t}</span>)}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <button className="btn bg" style={{ fontSize:11, padding:"7px 14px", flexShrink:0 }}>Read →</button>
+              ))}
+              <div style={{ padding:"12px 16px", background:"rgba(41,168,255,.04)", border:`1px solid ${C.accentDim}`, borderRadius:8, fontSize:11, color:C.textDim }}>
+                Reports are auto-composed from live feed data. For a full AI-generated brief, use the AI Deep Analysis button on any event in the Feed tab.
               </div>
-            </div>
-          ))}
+            </>
+          )}
         </div>
       )}
 
@@ -11388,12 +11507,19 @@ bias: 1=bullish, -1=bearish, 0=neutral. score: 1-10 conviction. Use real current
             <IC n="feed" s={14} c={C.accent}/>
             <div className="sl" style={{ margin:0 }}>Active Alerts</div>
           </div>
-          {SAMPLE_EVENTS.filter(e=>e.impactScore>=alertThresh).map(e => (
+          {EVENTS_DATA.filter(e=>e.impactScore>=alertThresh).length === 0 && (
+            <div style={{ padding:"24px", textAlign:"center", color:C.textDim, fontSize:12 }}>
+              {EVENTS_DATA.length === 0
+                ? "No live events loaded. Go to the Feed tab to fetch current macro intelligence."
+                : `No events meet the impact threshold of ${alertThresh}+. Lower the threshold or check back as new events are added.`}
+            </div>
+          )}
+          {EVENTS_DATA.filter(e=>e.impactScore>=alertThresh).map(e => (
             <div key={e.id} style={{ background:"rgba(13,16,24,.85)", border:`1px solid ${scoreColor(e.impactScore)}35`, borderRadius:9, padding:"14px 16px", marginBottom:8, display:"flex", gap:12, alignItems:"center" }}>
               <ScoreRing score={e.impactScore} size={40}/>
               <div style={{ flex:1 }}>
                 <div style={{ display:"flex", gap:6, alignItems:"center", marginBottom:4 }}>
-                  <span style={{ fontSize:14 }}><CatIcon cat={e.category} s={18} c={C.textMuted}/></span>
+                  <CatIcon cat={e.category} s={18} c={C.textMuted}/>
                   <span style={{ fontSize:11, color:C.textDim }}>{e.category} · {fmtTime(e.timestamp)}</span>
                 </div>
                 <div style={{ fontSize:12, color:C.text, fontWeight:500 }}>{e.headline}</div>
@@ -11436,6 +11562,24 @@ const Admin = ({ setPage }) => {
   const [aiUsageAdmin,        setAiUsageAdmin]        = useState(null);
   const [aiUsageAdminLoading, setAiUsageAdminLoading] = useState(false);
   const [aiUsageDays,         setAiUsageDays]         = useState(30);
+
+  // Churn risk panel
+  const [churnUsers,        setChurnUsers]        = useState([]);
+  const [churnLoading,      setChurnLoading]      = useState(false);
+
+  // AI decision log
+  const [aiDecisions,       setAiDecisions]       = useState([]);
+  const [aiDecisionsLoading,setAiDecisionsLoading]= useState(false);
+  const [overrideId,        setOverrideId]        = useState(null);
+  const [overrideReason,    setOverrideReason]    = useState("");
+  const [overrideSavingAI,  setOverrideSavingAI]  = useState(false);
+
+  // Mentorship applications
+  const [mentorApps,        setMentorApps]        = useState([]);
+  const [mentorLoading,     setMentorLoading]     = useState(false);
+  const [mentorFilter,      setMentorFilter]      = useState("pending");
+  const [mentorUpdating,    setMentorUpdating]    = useState({});
+  const [mentorNotes,       setMentorNotes]       = useState({});
 
   // $1 crypto test payment
   const [testPayLoading, setTestPayLoading] = useState(false);
@@ -11505,6 +11649,58 @@ const Admin = ({ setPage }) => {
       else setOverrideMsg(data.error?.message || "Override failed.");
     } catch { setOverrideMsg("Unable to connect."); }
     finally { setOverrideSaving(false); }
+  };
+
+  // Fetch churn risk users
+  useEffect(() => {
+    if (!token) return;
+    setChurnLoading(true);
+    api.get("/admin/churn-risk", token)
+      .then(d => { if (d.success) setChurnUsers(d.data.users || []); })
+      .catch(()=>{})
+      .finally(()=>setChurnLoading(false));
+  }, [token]);
+
+  // Fetch AI decision log
+  useEffect(() => {
+    if (!token) return;
+    setAiDecisionsLoading(true);
+    api.get("/admin/ai-decisions?limit=30", token)
+      .then(d => { if (d.success) setAiDecisions(d.data.decisions || []); })
+      .catch(()=>{})
+      .finally(()=>setAiDecisionsLoading(false));
+  }, [token]);
+
+  // Fetch mentorship applications
+  useEffect(() => {
+    if (!token) return;
+    setMentorLoading(true);
+    api.get(`/admin/mentorship/applications?status=${mentorFilter}`, token)
+      .then(d => { if (d.success) setMentorApps(d.data.applications || []); })
+      .catch(()=>{})
+      .finally(()=>setMentorLoading(false));
+  }, [token, mentorFilter]);
+
+  const submitAiOverride = async (id) => {
+    if (!overrideReason.trim()) return;
+    setOverrideSavingAI(true);
+    try {
+      const d = await api.post(`/admin/ai-decisions/${id}/override`, { reasoning: overrideReason }, token);
+      if (d.success) {
+        setAiDecisions(prev => prev.map(dec => dec.id === id ? { ...dec, override_by_founder: true, override_reasoning: overrideReason } : dec));
+        setOverrideId(null); setOverrideReason("");
+      }
+    } catch {}
+    setOverrideSavingAI(false);
+  };
+
+  const updateMentorStatus = async (id, status) => {
+    setMentorUpdating(s => ({ ...s, [id]: true }));
+    try {
+      const d = await api.put(`/admin/mentorship/applications/${id}`, { status, reviewer_notes: mentorNotes[id] || null }, token);
+      if (d.success) setMentorApps(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+    } catch {}
+    setMentorUpdating(s => ({ ...s, [id]: false }));
   };
 
   const fmtTier = t => ({ free:"Free", core_45:"$45 Core", pro_65:"$65 Pro", elite_95:"$95 Elite", lifetime:"Lifetime" }[t] || t);
@@ -11740,7 +11936,7 @@ const Admin = ({ setPage }) => {
       </div>
 
       <div className="sl">Recent Members</div>
-      <div style={{ background:"rgba(13,16,24,.82)",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",backdropFilter:"blur(8px)" }}>
+      <div style={{ background:"rgba(13,16,24,.82)",border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden",backdropFilter:"blur(8px)",marginBottom:14 }}>
         <table>
           <thead><tr><th>Email</th><th>Name</th><th>Tier</th><th>Status</th><th>Joined</th></tr></thead>
           <tbody>
@@ -11757,6 +11953,177 @@ const Admin = ({ setPage }) => {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* ── Churn Risk Panel ───────────────────────────────────────────────────── */}
+      <div className="mc" style={{ marginBottom:14 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:14 }}>
+          <IC n="alert" s={14} c={C.pink}/>
+          <div className="sl" style={{ margin:0,color:C.text }}>Churn Risk — High &amp; Critical</div>
+          {churnUsers.length > 0 && (
+            <span style={{ marginLeft:"auto",fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:10,background:`${C.pink}18`,border:`1px solid ${C.pink}40`,color:C.pink }}>{churnUsers.length} at risk</span>
+          )}
+        </div>
+        {churnLoading ? (
+          <div style={{ color:C.textDim,fontSize:12,padding:"8px 0" }}>Loading…</div>
+        ) : churnUsers.length === 0 ? (
+          <div style={{ display:"flex",alignItems:"center",gap:10,padding:"18px 0",color:C.textDim,fontSize:12 }}>
+            <IC n="check" s={14} c={C.accent}/>
+            No high or critical churn risk users at this time.
+          </div>
+        ) : (
+          <div className="mob-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>Tier</th>
+                  <th>Risk Level</th>
+                  <th>Eng. Score</th>
+                  <th>Days Inactive</th>
+                  <th>LTV</th>
+                </tr>
+              </thead>
+              <tbody>
+                {churnUsers.map(u => {
+                  const riskCol = u.churn_risk === "critical" ? C.pink : "#ffa726";
+                  return (
+                    <tr key={u.id}>
+                      <td style={{ fontSize:11 }}>{u.email}</td>
+                      <td><span className="tg ta" style={{ fontSize:9 }}>{fmtTier(u.membership_tier)}</span></td>
+                      <td>
+                        <span style={{ fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:4,background:`${riskCol}18`,border:`1px solid ${riskCol}40`,color:riskCol,textTransform:"uppercase",letterSpacing:".06em" }}>
+                          {u.churn_risk}
+                        </span>
+                      </td>
+                      <td className="mn" style={{ fontSize:11,color:u.composite_engagement_score < 40 ? C.pink : C.accent }}>
+                        {u.composite_engagement_score != null ? Math.round(u.composite_engagement_score) : "—"}
+                      </td>
+                      <td className="mn" style={{ fontSize:11,color:u.days_since_last_login > 14 ? C.pink : C.textMuted }}>
+                        {u.days_since_last_login != null ? `${u.days_since_last_login}d` : "—"}
+                      </td>
+                      <td className="mn" style={{ fontSize:11,color:C.gold }}>
+                        {u.lifetime_value_usd != null ? `$${parseFloat(u.lifetime_value_usd).toFixed(0)}` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Mentorship Applications ────────────────────────────────────────────── */}
+      <div className="mc" style={{ marginBottom:14 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap" }}>
+          <IC n="edu" s={14} c={C.accent}/>
+          <div className="sl" style={{ margin:0,color:C.text }}>Mentorship Applications</div>
+          <div style={{ marginLeft:"auto",display:"flex",gap:6 }}>
+            {["pending","accepted","rejected","all"].map(f => (
+              <button key={f} className="btn bg" style={{ fontSize:10,padding:"4px 10px",borderColor:mentorFilter===f?C.accent:C.border,color:mentorFilter===f?C.accent:C.textMuted,textTransform:"capitalize" }} onClick={()=>setMentorFilter(f)}>{f}</button>
+            ))}
+          </div>
+        </div>
+        {mentorLoading ? (
+          <div style={{ color:C.textDim,fontSize:12 }}>Loading…</div>
+        ) : mentorApps.length === 0 ? (
+          <div style={{ color:C.textDim,fontSize:12,padding:"14px 0" }}>No {mentorFilter === "all" ? "" : mentorFilter} applications found.</div>
+        ) : (
+          <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
+            {mentorApps.map(a => {
+              const statusCol = { pending:"#ffa726", accepted:C.accent, rejected:C.pink, waitlisted:C.gold }[a.status] || C.textDim;
+              return (
+                <div key={a.id} style={{ padding:"14px 16px",background:"rgba(13,16,24,.6)",border:`1px solid ${C.border}`,borderRadius:8 }}>
+                  <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:10 }}>
+                    <div>
+                      <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:3 }}>
+                        <span style={{ fontSize:13,fontWeight:600,color:C.text }}>{a.first_name || ""} {a.last_name || ""}</span>
+                        <span className="tg ta" style={{ fontSize:9 }}>{fmtTier(a.tier)}</span>
+                        <span style={{ fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:4,background:`${statusCol}18`,border:`1px solid ${statusCol}40`,color:statusCol,textTransform:"uppercase",letterSpacing:".06em" }}>{a.status}</span>
+                      </div>
+                      <div style={{ fontSize:11,color:C.textDim }}>{a.email} · Applied {new Date(a.created_at).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div>
+                    </div>
+                    {a.status === "pending" && (
+                      <div style={{ display:"flex",gap:6 }}>
+                        <button className="btn bg" style={{ fontSize:10,padding:"5px 12px",color:C.accent,borderColor:`${C.accent}40` }} disabled={mentorUpdating[a.id]} onClick={()=>updateMentorStatus(a.id,"accepted")}>Accept</button>
+                        <button className="btn bg" style={{ fontSize:10,padding:"5px 12px",color:"#ffa726",borderColor:"rgba(255,167,38,.4)" }} disabled={mentorUpdating[a.id]} onClick={()=>updateMentorStatus(a.id,"waitlisted")}>Waitlist</button>
+                        <button className="btn bg" style={{ fontSize:10,padding:"5px 12px",color:C.pink,borderColor:`${C.pink}40` }} disabled={mentorUpdating[a.id]} onClick={()=>updateMentorStatus(a.id,"rejected")}>Decline</button>
+                      </div>
+                    )}
+                  </div>
+                  {a.answers && (
+                    <div style={{ fontSize:11,color:C.textMuted,lineHeight:1.7,padding:"8px 10px",background:"rgba(0,0,0,.3)",borderRadius:6,marginBottom:a.status==="pending"?8:0 }}>
+                      {typeof a.answers === "string" ? a.answers : JSON.stringify(a.answers)}
+                    </div>
+                  )}
+                  {a.reviewer_notes && (
+                    <div style={{ fontSize:11,color:C.textDim,fontStyle:"italic",marginTop:4 }}>Note: {a.reviewer_notes}</div>
+                  )}
+                  {a.status === "pending" && (
+                    <textarea className="inp" placeholder="Optional reviewer notes…" value={mentorNotes[a.id]||""} onChange={e=>setMentorNotes(n=>({...n,[a.id]:e.target.value}))} style={{ marginTop:8,minHeight:44,resize:"vertical",fontFamily:"inherit",fontSize:11,width:"100%",boxSizing:"border-box" }}/>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── AI Decision Log ────────────────────────────────────────────────────── */}
+      <div className="mc" style={{ marginBottom:14 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:14 }}>
+          <IC n="brain" s={14} c={C.accent}/>
+          <div className="sl" style={{ margin:0,color:C.text }}>AI Decision Log</div>
+          <span style={{ marginLeft:"auto",fontSize:11,color:C.textDim }}>Last 30 decisions</span>
+        </div>
+        {aiDecisionsLoading ? (
+          <div style={{ color:C.textDim,fontSize:12 }}>Loading…</div>
+        ) : aiDecisions.length === 0 ? (
+          <div style={{ color:C.textDim,fontSize:12,padding:"14px 0" }}>No AI decisions logged yet. Decisions populate when automated workflows execute.</div>
+        ) : (
+          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+            {aiDecisions.map(d => (
+              <div key={d.id} style={{ padding:"12px 14px",background:"rgba(13,16,24,.6)",border:`1px solid ${d.override_by_founder ? `${C.gold}40` : C.border}`,borderRadius:8 }}>
+                <div style={{ display:"flex",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:d.reasoning_summary?6:0 }}>
+                  <div style={{ flex:1,minWidth:0 }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:2 }}>
+                      <span className="mn" style={{ fontSize:11,color:C.accent }}>{d.department}</span>
+                      <span style={{ fontSize:10,color:C.textDim }}>·</span>
+                      <span style={{ fontSize:11,color:C.textMuted }}>{d.decision_type}</span>
+                      {d.confidence_score != null && (
+                        <span style={{ fontSize:9,color:C.textDim }}>conf: {Math.round(d.confidence_score * 100)}%</span>
+                      )}
+                      {d.override_by_founder && (
+                        <span style={{ fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:3,background:`${C.gold}18`,border:`1px solid ${C.gold}40`,color:C.gold }}>OVERRIDDEN</span>
+                      )}
+                    </div>
+                    {d.user_email && <div style={{ fontSize:11,color:C.textDim }}>{d.user_email}</div>}
+                    <div style={{ fontSize:10,color:C.textDim }}>{new Date(d.created_at).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+                  </div>
+                  {!d.override_by_founder && (
+                    <button className="btn bg" style={{ fontSize:10,padding:"4px 10px",color:C.gold,borderColor:`${C.gold}40`,flexShrink:0 }} onClick={()=>setOverrideId(overrideId===d.id?null:d.id)}>Override</button>
+                  )}
+                </div>
+                {d.reasoning_summary && (
+                  <div style={{ fontSize:11,color:C.textMuted,lineHeight:1.7,marginTop:4 }}>{d.reasoning_summary}</div>
+                )}
+                {d.override_reasoning && (
+                  <div style={{ fontSize:11,color:C.gold,fontStyle:"italic",marginTop:4 }}>Override reason: {d.override_reasoning}</div>
+                )}
+                {overrideId === d.id && (
+                  <div style={{ marginTop:10,display:"flex",gap:8 }}>
+                    <input className="inp" placeholder="Override reasoning…" value={overrideReason} onChange={e=>setOverrideReason(e.target.value)} style={{ flex:1,fontSize:11 }}/>
+                    <button className="btn bp" style={{ fontSize:11,padding:"6px 14px",flexShrink:0,opacity:overrideSavingAI?.6:1 }} disabled={overrideSavingAI||!overrideReason.trim()} onClick={()=>submitAiOverride(d.id)}>
+                      {overrideSavingAI ? "Saving…" : "Confirm"}
+                    </button>
+                    <button className="btn bg" style={{ fontSize:11,padding:"6px 10px" }} onClick={()=>{setOverrideId(null);setOverrideReason("");}}>Cancel</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -12141,6 +12508,9 @@ export default function App() {
           .cog-metrics-strip{grid-template-columns:1fr!important}
           .cog-bias-grid{grid-template-columns:1fr 1fr!important;gap:6px!important}
           .cog-5col{grid-template-columns:repeat(2,1fr)!important;gap:8px!important}
+
+          /* Behavioral engine — revenge trading decomposition */
+          .be-revenge-grid{grid-template-columns:1fr 1fr!important;gap:8px!important}
 
           /* Broker sync card — action row */
           .broker-sync-actions{flex-wrap:wrap!important;gap:8px!important}
